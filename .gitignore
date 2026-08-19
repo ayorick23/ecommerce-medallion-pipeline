@@ -1,1 +1,32 @@
-.env.example
+# Python
+__pycache__/
+*.pyc
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# Entornos
+.venv/
+.env
+
+# Datos (Olist se descarga localmente, no se versiona)
+data/raw/*
+data/bronze/*
+data/silver/*
+data/gold/*
+!data/raw/.gitkeep
+!data/bronze/.gitkeep
+!data/silver/.gitkeep
+!data/gold/.gitkeep
+
+# DuckDB
+*.duckdb
+
+# Airflow
+logs/*
+!logs/.gitkeep
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
