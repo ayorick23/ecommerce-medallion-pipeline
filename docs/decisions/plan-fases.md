@@ -161,12 +161,18 @@ minutos para decidir si le interesa tu perfil.
 
 ---
 
-## Decisiones abiertas — a resolver en Fase 1
+## Decisiones abiertas — resueltas en Fase 1
 
-1. **Granularidad del replay:** confirmado que es diario. Falta definir qué
-   timestamp de Olist ancla el "día de llegada" de un pedido, y cómo entran
-   a bronze las actualizaciones de estado que ocurren en días posteriores a
-   la ingesta inicial del pedido (¿nuevo registro en bronze ese día? ¿upsert?).
+1. **Granularidad del replay:** diaria (confirmado). El timestamp que
+   ancla el "día de llegada" de un pedido es `order_purchase_timestamp`
+   (único sin nulos en el 100% de los pedidos). Las actualizaciones de
+   estado en días posteriores generan un **nuevo registro** en Bronze ese
+   día (re-emisión de la fila cruda, nunca upsert) — diseño completo en el
+   ADR 0004 y en `docs/schemas.md`.
+
+Ver `docs/schemas.md` para el documento de contratos completo (schemas de
+las 3 capas, reglas de fail-fast, diseño SCD2, diagrama ER de Gold) —
+cierre de la Fase 1.
 
 ## Índice de decisiones de arquitectura (ADR)
 
@@ -177,3 +183,5 @@ Cada decisión de diseño no trivial vive como archivo independiente en
 | ---- | ----------------------------------------------------- | -------- |
 | [0001](decisions/0001-fail-fast-hard-stop-total.md)                 | Semántica de fail-fast: hard stop total            | Aceptada |
 | [0002](decisions/0002-desacople-logica-transformacion-airflow.md)   | Desacoplar la lógica de transformación de Airflow  | Aceptada |
+| [0003](decisions/0003-alcance-fail-fast-normalizacion-vs-hard-stop.md) | Alcance del fail-fast: violaciones estructurales vs. normalización | Aceptada |
+| [0004](decisions/0004-bronze-append-only-reemision-por-evento.md)   | Bronze append-only con re-emisión por evento       | Aceptada |
