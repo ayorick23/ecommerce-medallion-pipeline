@@ -54,9 +54,8 @@ Ambos son la fuente de verdad — léelos antes de retomar trabajo en este repo.
 
 ## Versionamiento de datos
 
-DVC se evaluará si resulta necesario para este proyecto — aún no decidido.
-No agregarlo preventivamente; se revisa al diseñar la capa Bronze
-(Fase 2 de `docs/plan-fases.md`).
+No se usa DVC (decidido en ADR 0010): la fuente es un dataset estático y
+las capas son derivados reproducibles. `data/` queda fuera de git.
 
 ## Cómo colaborar
 

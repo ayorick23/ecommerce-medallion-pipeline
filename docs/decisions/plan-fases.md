@@ -235,3 +235,7 @@ Cada decisión de diseño no trivial vive como archivo independiente en
 | [0007](0007-polars-bronze-silver-dbt-gold.md) | Polars en Bronze/Silver, dbt (dbt-duckdb) en Gold | Aceptada |
 | [0008](0008-almacenamiento-configurable-local-azurite-azure.md) | Almacenamiento configurable: local, Azurite o Azure Blob | Aceptada |
 | [0009](0009-airflow-como-orquestador-vs-adf.md) | Airflow como orquestador (ADF como alternativa) | Aceptada |
+| [0010](0010-sin-dvc-versionamiento-datos.md) | No usar DVC para versionar datos | Aceptada |
+| [0011](0011-bronze-schema-on-read-todo-texto.md) | Bronze schema-on-read: columnas fuente como texto | Aceptada |
+| [0012](0012-idempotencia-bronze-reemplazo-atomico-particion.md) | Idempotencia en Bronze: reemplazo atómico de la partición | Aceptada |
+| [0013](0013-batch-hash-contenido-canonico.md) | `batch_hash`: SHA-256 del contenido canónico del batch | Aceptada |

@@ -85,6 +85,60 @@ día). Columnas = columnas originales del CSV (ver
 `notebooks/01_exploracion_olist.ipynb`, sección 1, para el schema exacto
 inferido de cada una).
 
+### Implementación física de Bronze (Fase 2)
+
+**Tipos:** todas las columnas fuente se persisten como texto; solo las
+columnas de linaje van tipadas (ADR 0011). Los tipos listados arriba son
+los que Silver debe poder convertir, no los físicos de Bronze.
+
+**Layout** (relativo a la raíz de almacenamiento configurable, ADR 0008):
+
+```text
+bronze/
+├── orders/dia_simulado=YYYY-MM-DD/part-0.parquet
+├── order_items/dia_simulado=YYYY-MM-DD/part-0.parquet
+├── order_payments/dia_simulado=YYYY-MM-DD/part-0.parquet
+├── order_reviews/dia_simulado=YYYY-MM-DD/part-0.parquet
+├── customers/snapshot.parquet
+├── products/snapshot.parquet
+├── sellers/snapshot.parquet
+├── geolocation/snapshot.parquet
+└── category_translation/snapshot.parquet
+```
+
+El nombre de la tabla en disco omite el prefijo `bronze_` (lo da la
+carpeta de la capa). Particionado estilo Hive: Polars, DuckDB y dbt
+reconstruyen `dia_simulado` a partir de la ruta. Un día sin datos para una
+tabla no genera partición vacía; si al reprocesarlo existía una partición
+previa, se elimina (reemplazar por "vacío", coherente con ADR 0012).
+
+**Varios eventos el mismo día:** si dos o más timestamps ancla de un mismo
+pedido caen el mismo `dia_simulado` (p. ej. compra y aprobación), se emite
+**una sola fila** — el grano es `(order_id, dia_simulado)`. Medido sobre
+Olist: 392,856 eventos no nulos colapsan en 308,454 filas de
+`bronze_orders`, repartidas en 691 días (2016-09-04 → 2018-10-17).
+
+**Idempotencia y `batch_hash`:** reemplazo atómico de la partición del día
+(ADR 0012); `batch_hash` = SHA-256 del contenido canónico, usado también
+para no reescribir snapshots sin cambios (ADR 0013).
+
+**Anomalías temporales de la fuente — Bronze no las corrige:** la regla de
+re-emisión se aplica mecánicamente (ADR 0004), aunque produzca llegadas
+"antes de tiempo":
+
+- 166 pedidos tienen algún evento con timestamp **anterior** a su
+  `order_purchase_timestamp` → ese pedido aparece en Bronze en un día
+  previo a su compra (y antes que sus `order_items`/`order_payments`).
+- 64 reviews tienen `review_creation_date` anterior al día de compra de
+  su pedido → la review llega a Bronze antes que el pedido.
+
+Consecuencia para la Fase 3 (**pendiente de diseño**): en un replay
+incremental, Silver verá **huérfanos temporales de FK** (*early-arriving
+facts*: el padre llegará en un día posterior). La regla fail-fast de
+"huérfano de FK no documentado" (sección 4) debe distinguir "el padre aún
+no llegó" de "el padre no existe", o Silver frenaría el pipeline en días
+legítimos.
+
 ---
 
 ## 3. Capa Silver
