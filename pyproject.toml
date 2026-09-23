@@ -1,7 +1,7 @@
 [project]
 name = "ecommerce-medallion-pipeline"
 version = "0.1.0"
-description = "Pipeline de Data Engineering para e-commerce (arquitectura medallion: Bronze/Silver/Gold) con Polars, Airflow y DuckDB."
+description = "Pipeline de Data Engineering para e-commerce (arquitectura medallion: Bronze/Silver/Gold) con Polars, dbt, DuckDB y Airflow."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

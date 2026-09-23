@@ -1,7 +1,7 @@
 # ecommerce-medallion-pipeline
 
 Pipeline de Data Engineering para e-commerce (arquitectura medallion:
-Bronze/Silver/Gold) con Polars, Airflow y DuckDB, sobre el dataset
+Bronze/Silver/Gold) con Polars, dbt, DuckDB y Airflow, sobre el dataset
 [Olist](https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce).
 
 > Proyecto de portafolio en construcción por fases. El plan completo y las

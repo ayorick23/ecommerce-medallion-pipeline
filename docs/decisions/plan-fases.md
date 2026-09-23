@@ -19,12 +19,14 @@ pedagógico, no solo un checklist técnico.
 
 1. **Diseño antes que código.** Los esquemas y contratos de datos se definen
    en un documento antes de escribir la primera línea de transformación.
-2. **Lógica de transformación desacoplada de Airflow.** Bronze/Silver/Gold se
-   implementan como funciones Python puras (reciben datos, devuelven datos),
-   testeables con pytest sin levantar Airflow. Airflow solo orquesta —
-   los `PythonOperator`/`@task` son envoltorios delgados que llaman a esas
-   funciones. Esto es estándar en la industria porque permite testear la
-   lógica de negocio en segundos, no en minutos con un scheduler corriendo.
+2. **Lógica de transformación desacoplada de Airflow.** Bronze/Silver se
+   implementan como funciones Python puras con Polars (reciben datos,
+   devuelven datos), testeables con pytest sin levantar Airflow; Gold se
+   implementa como un proyecto dbt sobre DuckDB (ADR 0007). Airflow solo
+   orquesta — los `PythonOperator`/`@task` son envoltorios delgados que
+   llaman a esas funciones o a `dbt build`. Esto es estándar en la industria
+   porque permite testear la lógica de negocio en segundos, no en minutos
+   con un scheduler corriendo.
 3. **Fail-fast real.** Ninguna capa avanza a la siguiente si la validación
    falla. Sin "seguir con warnings".
 4. **Idempotencia.** Reprocesar una fecha ya procesada no duplica ni corrompe.
@@ -108,20 +110,31 @@ solo en teoría).
 
 ### Fase 4 — Capa Gold: modelado dimensional
 
-**Entregables:** `fct_pedidos`, `fct_pagos`, `dim_cliente`, `dim_producto`,
-`dim_vendedor`, `dim_tiempo`, `dim_estado_pedido` cargadas en DuckDB;
-validación Pandera silver→gold.
+**Entregables:** proyecto dbt Core + `dbt-duckdb` (ADR 0007) que construye
+`fct_pedidos`, `fct_pagos`, `dim_cliente`, `dim_producto`, `dim_vendedor`,
+`dim_tiempo`, `dim_estado_pedido` en DuckDB leyendo Silver (Parquet) como
+*sources*; validación silver→gold como tests de dbt (reglas de la sección 4
+de `docs/schemas.md`).
 
-**Aprendizaje:** construcción de star schema real, estrategias de carga
-(upsert/merge) en DuckDB.
+> Cambio respecto del plan original (2026-09-23): la validación silver→gold
+> era con Pandera y Gold se construía con Polars. Se pasó a dbt para cubrir
+> el modelado dimensional con la herramienta estándar de la industria — ver
+> ADR 0007.
+
+**Aprendizaje:** construcción de star schema real, dbt (modelos, `ref()`,
+sources, tests, docs y linaje), estrategias de materialización y carga
+(tabla completa vs. incremental/merge) en DuckDB.
 
 ---
 
 ### Fase 5 — Orquestación completa con Airflow
 
-**Entregables:** DAG(s) que envuelven las funciones puras de las fases 2–4
-como tasks, dependencias entre capas, política de reintentos, manejo de
-fallos (y sensores si el diseño de Fase 1 los justifica).
+**Entregables:** DAG(s) que envuelven las funciones puras de las fases 2–3
+y el `dbt build` de la fase 4 como tasks, dependencias entre capas,
+política de reintentos, manejo de fallos (y sensores si el diseño de Fase 1
+los justifica). Puntos a resolver: aislar las dependencias de dbt de las de
+Airflow, y serializar las escrituras a `warehouse.duckdb` (un solo escritor
+— ADR 0005, 0007).
 
 **Aprendizaje:** Airflow real — operators, dependencias entre tasks, retries,
 backfill. Si seguimos el principio de desacoplar lógica (ver principio #2),
@@ -174,14 +187,51 @@ Ver `docs/schemas.md` para el documento de contratos completo (schemas de
 las 3 capas, reglas de fail-fast, diseño SCD2, diagrama ER de Gold) —
 cierre de la Fase 1.
 
+## Stack tecnológico y flujo de datos (definido 2026-09-23, antes de Fase 2)
+
+Cada herramienta cumple un rol; ninguna se solapa con otra.
+
+| Rol | Herramienta | ADR |
+| --- | --- | --- |
+| Almacenamiento Bronze/Silver | Parquet plano (Bronze particionado por `dia_simulado`) | 0005, 0006 |
+| Almacenamiento Gold (consumo) | DuckDB (`warehouse.duckdb`) | 0005 |
+| Raíz de almacenamiento | Configurable: local por defecto; Azurite / Azure Blob opcionales | 0008 |
+| Transformación Bronze/Silver | Polars (funciones puras en `src/`) | 0002, 0007 |
+| Calidad Bronze→Silver | Pandera | 0001, 0003 |
+| Transformación y calidad Silver→Gold | dbt Core + `dbt-duckdb` (modelos + tests) | 0007 |
+| Orquestación | Apache Airflow (Azure Data Factory documentado como alternativa) | 0009 |
+| Metastore de Airflow | Postgres (solo estado de Airflow, nunca datos del pipeline) | 0005 |
+| Empaquetado / reproducibilidad | Docker Compose | — |
+
+```text
+data/raw/*.csv  (Olist, inmutable)
+   │  Airflow → bronze_ingest(dia_simulado)          [Polars]
+   ▼
+data/bronze/<tabla>/dia_simulado=YYYY-MM-DD/*.parquet  (+ linaje)
+   │  Airflow → silver_build                          [Polars + Pandera, fail-fast]
+   ▼
+data/silver/<tabla>/*.parquet
+   │  Airflow → dbt build                             [dbt-duckdb, tests = fail-fast]
+   ▼
+data/gold/warehouse.duckdb  (star schema: dim_* / fct_*)
+   │
+   ▼
+Consumo: SQL, notebooks, BI
+```
+
 ## Índice de decisiones de arquitectura (ADR)
 
 Cada decisión de diseño no trivial vive como archivo independiente en
 `docs/decisions/`. Este índice se actualiza a medida que se agregan nuevas.
 
-| #    | Título                                              | Estado   |
-| ---- | ----------------------------------------------------- | -------- |
-| [0001](decisions/0001-fail-fast-hard-stop-total.md)                 | Semántica de fail-fast: hard stop total            | Aceptada |
-| [0002](decisions/0002-desacople-logica-transformacion-airflow.md)   | Desacoplar la lógica de transformación de Airflow  | Aceptada |
-| [0003](decisions/0003-alcance-fail-fast-normalizacion-vs-hard-stop.md) | Alcance del fail-fast: violaciones estructurales vs. normalización | Aceptada |
-| [0004](decisions/0004-bronze-append-only-reemision-por-evento.md)   | Bronze append-only con re-emisión por evento       | Aceptada |
+| # | Título | Estado |
+| --- | --- | --- |
+| [0001](0001-fail-fast-hard-stop-total.md) | Semántica de fail-fast: hard stop total | Aceptada |
+| [0002](0002-desacople-logica-transformacion-airflow.md) | Desacoplar la lógica de transformación de Airflow | Aceptada — parcialmente superada por 0007 (Gold) |
+| [0003](0003-alcance-fail-fast-normalizacion-vs-hard-stop.md) | Alcance del fail-fast: violaciones estructurales vs. normalización | Aceptada |
+| [0004](0004-bronze-append-only-reemision-por-evento.md) | Bronze append-only con re-emisión por evento | Aceptada |
+| [0005](0005-almacenamiento-por-capa-parquet-duckdb.md) | Almacenamiento por capa: Parquet en Bronze/Silver, DuckDB en Gold | Aceptada |
+| [0006](0006-parquet-plano-vs-delta-lake.md) | Parquet plano en lugar de Delta Lake / Iceberg | Aceptada |
+| [0007](0007-polars-bronze-silver-dbt-gold.md) | Polars en Bronze/Silver, dbt (dbt-duckdb) en Gold | Aceptada |
+| [0008](0008-almacenamiento-configurable-local-azurite-azure.md) | Almacenamiento configurable: local, Azurite o Azure Blob | Aceptada |
+| [0009](0009-airflow-como-orquestador-vs-adf.md) | Airflow como orquestador (ADF como alternativa) | Aceptada |
