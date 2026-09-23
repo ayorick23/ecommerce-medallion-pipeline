@@ -8,6 +8,7 @@ dependencies = [
     "duckdb>=1.5.5",
     "pandera>=0.32.1",
     "polars>=1.43.2",
+    "pyyaml>=6.0.3",
 ]
 
 [tool.uv]
@@ -21,6 +22,7 @@ dev = [
     "pre-commit>=4.6.2",
     "pytest>=9.1.1",
     "ruff>=0.16.3",
+    "types-pyyaml>=6.0.12.20260906",
 ]
 
 [tool.pytest.ini_options]

@@ -1,0 +1,24 @@
+# Configuración del pipeline (principio rector #5: nada hardcodeado).
+#
+# storage.root: raíz de almacenamiento de todas las capas (ADR 0008).
+#   - Ruta local (relativa al directorio de trabajo o absoluta), o
+#   - URI remota, p. ej. abfs://lake@<cuenta>.dfs.core.windows.net
+#   Se puede sobrescribir con la variable de entorno PIPELINE_STORAGE_ROOT.
+#
+# Debajo de la raíz, el layout de capas es fijo (docs/schemas.md):
+#   raw/  bronze/  silver/  gold/
+
+storage:
+  root: ./data
+
+# Archivo CSV fuente de cada tabla, dentro de <root>/raw/.
+sources:
+  orders: olist_orders_dataset.csv
+  order_items: olist_order_items_dataset.csv
+  order_payments: olist_order_payments_dataset.csv
+  order_reviews: olist_order_reviews_dataset.csv
+  customers: olist_customers_dataset.csv
+  products: olist_products_dataset.csv
+  sellers: olist_sellers_dataset.csv
+  geolocation: olist_geolocation_dataset.csv
+  category_translation: product_category_name_translation.csv
