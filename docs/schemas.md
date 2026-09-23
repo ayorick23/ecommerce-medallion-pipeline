@@ -3,7 +3,7 @@
 > Fase 1. Documento de diseño, cerrado antes de escribir código de
 > transformación (principio rector #1 de `docs/decisions/plan-fases.md`).
 > Decisiones de arquitectura no triviales referenciadas están en
-> `docs/decisions/` (ADRs 0001-0004).
+> `docs/decisions/` (ADRs 0001-0004; stack y almacenamiento en 0005-0009).
 
 ## Convenciones generales
 
@@ -156,8 +156,10 @@ Igual a `bronze_category_translation`, sin cambios. **PK:**
 ## 4. Reglas de calidad no negociables (fail-fast) por transición
 
 Semántica: hard-stop total del batch (ADR 0001), alcance definido en
-ADR 0003. Estas son las reglas concretas a implementar como schemas
-Pandera en la Fase 3 — no hay ambigüedad pendiente.
+ADR 0003. Estas son las reglas concretas a implementar — no hay ambigüedad
+pendiente. Bronze→Silver se implementa como schemas Pandera (Fase 3);
+Silver→Gold, como tests de dbt (Fase 4, ADR 0007). Cambia la herramienta
+según la transición, no la regla.
 
 ### Bronze → Silver (dispara fail-fast)
 

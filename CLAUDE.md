@@ -3,9 +3,10 @@
 ## Proyecto
 
 Pipeline de Data Engineering para e-commerce (arquitectura medallion:
-Bronze/Silver/Gold) con Polars, Airflow y DuckDB. Es el Proyecto 3 de un
+Bronze/Silver/Gold) con Polars, dbt, DuckDB y Airflow. Es el Proyecto 3 de un
 portafolio profesional en construcción. El plan completo por fases vive en
-`docs/plan-fases.md`; las decisiones de arquitectura, en `docs/decisions/`.
+`docs/decisions/plan-fases.md` (incluye el stack y el flujo de datos); las
+decisiones de arquitectura, en `docs/decisions/`.
 Ambos son la fuente de verdad — léelos antes de retomar trabajo en este repo.
 
 ## Control de versiones (obligatorio, sin excepciones)
