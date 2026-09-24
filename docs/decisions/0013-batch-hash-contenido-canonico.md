@@ -1,6 +1,8 @@
 # 0013 — `batch_hash`: SHA-256 del contenido canónico del batch
 
-**Estado:** Aceptada
+**Estado:** Aceptada — parcialmente superada por
+[0014](0014-batch-hash-codificacion-prefijo-longitud.md) en la
+serialización canónica y el orden de filas (el resto sigue vigente)
 **Fecha:** 2026-09-23
 
 ## Contexto

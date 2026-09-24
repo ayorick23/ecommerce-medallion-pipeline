@@ -120,7 +120,8 @@ Olist: 392,856 eventos no nulos colapsan en 308,454 filas de
 
 **Idempotencia y `batch_hash`:** reemplazo atómico de la partición del día
 (ADR 0012); `batch_hash` = SHA-256 del contenido canónico, usado también
-para no reescribir snapshots sin cambios (ADR 0013).
+para no reescribir snapshots sin cambios (ADR 0013). La serialización
+canónica usa prefijo de longitud por valor (ADR 0014).
 
 **Anomalías temporales de la fuente — Bronze no las corrige:** la regla de
 re-emisión se aplica mecánicamente (ADR 0004), aunque produzca llegadas
