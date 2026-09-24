@@ -10,5 +10,5 @@ repos:
     rev: v2.3.1
     hooks:
       - id: mypy
-        additional_dependencies: [polars, pandera, duckdb, pyyaml, types-PyYAML]
+        additional_dependencies: [polars, pandera, duckdb, pyyaml, types-PyYAML, pytest]
         exclude: ^notebooks/
