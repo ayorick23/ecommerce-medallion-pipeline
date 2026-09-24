@@ -43,7 +43,7 @@ Ambos son la fuente de verdad — léelos antes de retomar trabajo en este repo.
 - Una ADR ya aceptada no se edita para cambiar la decisión: si la decisión
   cambia, se crea una nueva ADR que la reemplaza y se referencia la anterior
   como superada.
-- El índice de ADRs vive al final de `docs/plan-fases.md`.
+- El índice de ADRs vive al final de `docs/decisions/plan-fases.md`.
 
 ## Tests
 
