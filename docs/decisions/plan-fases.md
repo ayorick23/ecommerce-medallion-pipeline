@@ -241,3 +241,4 @@ Cada decisión de diseño no trivial vive como archivo independiente en
 | [0013](0013-batch-hash-contenido-canonico.md) | `batch_hash`: SHA-256 del contenido canónico del batch | Aceptada — parcialmente superada por 0014 (serialización) |
 | [0014](0014-batch-hash-codificacion-prefijo-longitud.md) | `batch_hash`: codificación canónica con prefijo de longitud | Aceptada |
 | [0015](0015-bronze-escritura-atomica-por-archivo.md) | Escritura atómica en Bronze: reemplazo de archivo desde staging | Aceptada |
+| [0016](0016-proyecto-instalable-paquete-medallion.md) | Proyecto instalable como paquete `medallion` | Aceptada |

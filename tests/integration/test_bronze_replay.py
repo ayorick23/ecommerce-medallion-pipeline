@@ -11,11 +11,11 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from bronze.ingest import ingest_day, load_sources
-from bronze.replay import main
-from bronze.storage import STAGING_DIR
-from bronze.tables import EVENT_TABLES, REFERENCE_TABLES
-from common.config import PipelineConfig
+from medallion.bronze.ingest import ingest_day, load_sources
+from medallion.bronze.replay import main
+from medallion.bronze.storage import STAGING_DIR
+from medallion.bronze.tables import EVENT_TABLES, REFERENCE_TABLES
+from medallion.common.config import PipelineConfig
 
 DAYS = (date(2017, 3, 15), date(2017, 3, 16), date(2017, 3, 17))
 

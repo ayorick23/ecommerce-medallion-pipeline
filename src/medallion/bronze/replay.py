@@ -1,9 +1,8 @@
 """Replay de Bronze: ingiere un rango de días simulados, en orden (ADR 0004).
 
-Uso, desde la raíz del repo (PowerShell)::
+Uso, desde la raíz del repo::
 
-    $env:PYTHONPATH = "src"
-    uv run python -m bronze.replay [--desde AAAA-MM-DD] [--hasta AAAA-MM-DD] [--config RUTA]
+    uv run bronze-replay [--desde AAAA-MM-DD] [--hasta AAAA-MM-DD] [--config RUTA]
 
 Sin fechas, recorre todo el rango de la fuente. En la Fase 5 Airflow llama a
 ``ingest_day`` día por día; este módulo sirve para correr el replay a mano.
@@ -16,10 +15,15 @@ from datetime import UTC, date, datetime, timedelta
 
 import polars as pl
 
-from bronze.ingest import TableResult, ingest_day, load_sources
-from bronze.routing import anchor_day
-from bronze.tables import EVENT_TABLES, ORDER_EVENT_ANCHORS, REFERENCE_TABLES, REVIEW_ANCHOR
-from common.config import PipelineConfig, load_config
+from medallion.bronze.ingest import TableResult, ingest_day, load_sources
+from medallion.bronze.routing import anchor_day
+from medallion.bronze.tables import (
+    EVENT_TABLES,
+    ORDER_EVENT_ANCHORS,
+    REFERENCE_TABLES,
+    REVIEW_ANCHOR,
+)
+from medallion.common.config import PipelineConfig, load_config
 
 
 def _utc_now() -> datetime:

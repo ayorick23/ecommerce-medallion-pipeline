@@ -12,7 +12,7 @@ from datetime import date
 
 import polars as pl
 
-from bronze.tables import ORDER_EVENT_ANCHORS, ORDER_PURCHASE_ANCHOR, REVIEW_ANCHOR
+from medallion.bronze.tables import ORDER_EVENT_ANCHORS, ORDER_PURCHASE_ANCHOR, REVIEW_ANCHOR
 
 TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S"
 _MAX_EXAMPLES = 5

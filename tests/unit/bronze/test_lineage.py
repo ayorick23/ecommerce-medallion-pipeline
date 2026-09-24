@@ -3,7 +3,7 @@ from datetime import UTC, date, datetime, timedelta, timezone
 import polars as pl
 import pytest
 
-from bronze.lineage import LINEAGE_COLUMNS, add_lineage
+from medallion.bronze.lineage import LINEAGE_COLUMNS, add_lineage
 
 DIA = date(2017, 3, 15)
 INGESTED_AT = datetime(2026, 9, 23, 14, 30, tzinfo=UTC)

@@ -4,7 +4,7 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from bronze.storage import (
+from medallion.bronze.storage import (
     STAGING_DIR,
     StorageError,
     partition_path,

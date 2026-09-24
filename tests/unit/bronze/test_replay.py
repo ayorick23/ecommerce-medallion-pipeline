@@ -4,10 +4,10 @@ from datetime import UTC, date, datetime
 import polars as pl
 import pytest
 
-import bronze.replay as replay_module
-from bronze.ingest import TableResult
-from bronze.replay import replay, source_day_range
-from common.config import PipelineConfig
+import medallion.bronze.replay as replay_module
+from medallion.bronze.ingest import TableResult
+from medallion.bronze.replay import replay, source_day_range
+from medallion.common.config import PipelineConfig
 
 CONFIG = PipelineConfig(storage_root="unused", sources={})
 

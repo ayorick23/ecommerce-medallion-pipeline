@@ -4,7 +4,7 @@ import polars as pl
 import pytest
 from polars.testing import assert_frame_equal
 
-from bronze.routing import (
+from medallion.bronze.routing import (
     RoutingError,
     anchor_day,
     order_children_for_day,

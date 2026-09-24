@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from common.config import (
+from medallion.common.config import (
     CONFIG_PATH_ENV,
     STORAGE_ROOT_ENV,
     ConfigError,

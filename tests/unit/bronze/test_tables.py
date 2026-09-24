@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from bronze.tables import EVENT_TABLES, REFERENCE_TABLES
-from common.config import load_config
+from medallion.bronze.tables import EVENT_TABLES, REFERENCE_TABLES
+from medallion.common.config import load_config
 
 
 def test_catalog_matches_configured_sources() -> None:

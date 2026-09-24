@@ -4,7 +4,7 @@ import re
 import polars as pl
 import pytest
 
-from bronze.hashing import batch_hash
+from medallion.bronze.hashing import batch_hash
 
 
 def _sha256(text: str) -> str:

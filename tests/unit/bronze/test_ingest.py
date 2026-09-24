@@ -4,11 +4,11 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from bronze.hashing import batch_hash
-from bronze.ingest import TableResult, ingest_day
-from bronze.storage import partition_path, snapshot_path
-from bronze.tables import EVENT_TABLES, REFERENCE_TABLES
-from common.config import PipelineConfig
+from medallion.bronze.hashing import batch_hash
+from medallion.bronze.ingest import TableResult, ingest_day
+from medallion.bronze.storage import partition_path, snapshot_path
+from medallion.bronze.tables import EVENT_TABLES, REFERENCE_TABLES
+from medallion.common.config import PipelineConfig
 
 D15, D16, D17 = date(2017, 3, 15), date(2017, 3, 16), date(2017, 3, 17)
 INGESTED_AT = datetime(2026, 9, 24, 12, 0, tzinfo=UTC)
