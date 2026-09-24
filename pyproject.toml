@@ -9,6 +9,7 @@ dependencies = [
     "pandera>=0.32.1",
     "polars>=1.43.2",
     "pyyaml>=6.0.3",
+    "tzdata>=2026.4",
 ]
 
 [tool.uv]
@@ -39,4 +40,9 @@ select = ["E", "F", "I", "UP", "B"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
+# Los paquetes viven bajo src/ y se importan como `bronze`, `common`, etc.
+# (igual que en pytest). Sin esto mypy no resuelve los imports entre módulos
+# de src/ y, por ignore_missing_imports, los trata en silencio como Any.
+mypy_path = "src"
+explicit_package_bases = true
 ignore_missing_imports = true
