@@ -3,7 +3,8 @@
 > Fase 1. Documento de diseño, cerrado antes de escribir código de
 > transformación (principio rector #1 de `docs/decisions/plan-fases.md`).
 > Decisiones de arquitectura no triviales referenciadas están en
-> `docs/decisions/` (ADRs 0001-0004; stack y almacenamiento en 0005-0009).
+> `docs/decisions/` (ADRs 0001-0004; stack y almacenamiento en 0005-0009;
+> implementación física de Bronze en 0010-0015).
 
 ## Convenciones generales
 
@@ -147,6 +148,37 @@ facts*: el padre llegará en un día posterior). La regla fail-fast de
 "huérfano de FK no documentado" (sección 4) debe distinguir "el padre aún
 no llegó" de "el padre no existe", o Silver frenaría el pipeline en días
 legítimos.
+
+**Pedidos sin items ni pagos — válidos, no son huérfanos:** 775 pedidos no
+tienen ninguna fila en `order_items` (603 `unavailable`, 164 `canceled`, 5
+`created`, 2 `invoiced`, 1 `shipped`) y 1 pedido no tiene pagos. En el
+replay aparecen como días con `orders` y pagos pero sin items. Las reglas
+de FK de la sección 4 van solo de hijo a padre (un item sin pedido sí es
+error); la dirección inversa (pedido sin hijos) es un estado válido y no
+debe convertirse en regla de validación en la Fase 3.
+
+**Los snapshots de referencia "conocen el futuro":** Olist no trae fechas
+para `customers`, `products`, `sellers`, `geolocation` ni
+`category_translation`, así que su snapshot completo existe desde el
+primer día del replay (2016-09-04), incluidos clientes y productos que
+recién aparecen en pedidos de 2018. No rompe ningún join, pero en Gold
+(Fase 4) una pregunta del tipo "¿cuántos clientes había a la fecha X?" no
+se puede responder contando `dim_customers`: hay que derivarla de los
+pedidos (p. ej. la primera compra de cada cliente). Es una limitación
+conocida de la simulación (consecuencia de ADR 0004), no un error.
+
+**Corridas simultáneas del mismo día (pendiente para la Fase 5):** la
+escritura es atómica por archivo (ADR 0015), pero si dos procesos ingieren
+el mismo `dia_simulado` a la vez, cada tabla queda con la versión del
+último en escribir y el día podría mezclar tablas de ambas corridas. Hoy
+no ocurre (el replay es secuencial). En Airflow hay que impedir que dos
+ejecuciones del mismo día corran en paralelo.
+
+**Replay completo verificado (2026-09-24):** 774 días de calendario
+(2016-09-04 → 2018-10-17; 691 con pedidos) en ~12 min. Cada tabla de
+eventos coincide con su fuente por `batch_hash` (en `orders`, tras quitar
+las re-emisiones), cada snapshot se escribió una sola vez, `_staging/`
+quedó vacío; 2,581 archivos Parquet, 67.7 MB.
 
 ---
 

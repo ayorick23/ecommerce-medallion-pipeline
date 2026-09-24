@@ -16,12 +16,17 @@ from typing import Literal
 
 import polars as pl
 
-from bronze.hashing import batch_hash
-from bronze.lineage import add_lineage
-from bronze.routing import order_children_for_day, orders_for_day, reviews_for_day
-from bronze.storage import read_source, snapshot_batch_hash, write_partition, write_snapshot
-from bronze.tables import EVENT_TABLES, ORDER_CHILD_TABLES, REFERENCE_TABLES
-from common.config import PipelineConfig
+from medallion.bronze.hashing import batch_hash
+from medallion.bronze.lineage import add_lineage
+from medallion.bronze.routing import order_children_for_day, orders_for_day, reviews_for_day
+from medallion.bronze.storage import (
+    read_source,
+    snapshot_batch_hash,
+    write_partition,
+    write_snapshot,
+)
+from medallion.bronze.tables import EVENT_TABLES, ORDER_CHILD_TABLES, REFERENCE_TABLES
+from medallion.common.config import PipelineConfig
 
 Action = Literal["written", "empty", "unchanged"]
 

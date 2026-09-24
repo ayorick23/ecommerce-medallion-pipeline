@@ -1,19 +1,21 @@
 """Replay de Bronze de punta a punta: CSV en disco -> particiones y snapshots.
 
-Criterio de "hecho" de la Fase 2: reprocesar días ya ingeridos da el mismo
-resultado, sin duplicar ni corromper (ADR 0012), comparando todo menos
-``ingested_at``.
+Criterio de "hecho" de la Fase 2: ingerir días nuevos hace crecer Bronze sin
+tocar lo ya escrito, y reprocesar días ya ingeridos da el mismo resultado, sin
+duplicar ni corromper (ADR 0012), comparando todo menos ``ingested_at``.
 """
 
 from datetime import UTC, date, datetime
 from pathlib import Path
 
 import polars as pl
+import pytest
 
-from bronze.ingest import ingest_day, load_sources
-from bronze.storage import STAGING_DIR
-from bronze.tables import EVENT_TABLES, REFERENCE_TABLES
-from common.config import PipelineConfig
+from medallion.bronze.ingest import ingest_day, load_sources
+from medallion.bronze.replay import main
+from medallion.bronze.storage import STAGING_DIR
+from medallion.bronze.tables import EVENT_TABLES, REFERENCE_TABLES
+from medallion.common.config import PipelineConfig
 
 DAYS = (date(2017, 3, 15), date(2017, 3, 16), date(2017, 3, 17))
 
@@ -62,6 +64,26 @@ def _bronze_state(bronze: Path) -> dict[str, pl.DataFrame]:
     return state
 
 
+def _files(bronze: Path) -> dict[Path, bytes]:
+    return {p: p.read_bytes() for p in bronze.rglob("*.parquet")}
+
+
+def test_each_new_day_grows_bronze_without_touching_previous_files(tmp_path: Path) -> None:
+    config = _setup(tmp_path)
+    bronze = tmp_path / "bronze"
+    sources = load_sources(config)
+    previous: dict[Path, bytes] = {}
+
+    for hour, dia in enumerate(DAYS):
+        # Una hora distinta por corrida: reescribir un archivo previo cambiaría sus bytes.
+        ingest_day(dia, sources, config, datetime(2026, 9, 24, hour, 0, tzinfo=UTC))
+        current = _files(bronze)
+
+        assert {p: current.get(p) for p in previous} == previous, f"{dia} modificó días previos"
+        assert any(f"dia_simulado={dia}" in str(p) for p in current.keys() - previous.keys())
+        previous = current
+
+
 def test_replay_of_three_days_and_reprocessing_is_idempotent(tmp_path: Path) -> None:
     config = _setup(tmp_path)
     bronze = tmp_path / "bronze"
@@ -79,6 +101,25 @@ def test_replay_of_three_days_and_reprocessing_is_idempotent(tmp_path: Path) -> 
     for table in first:
         assert second[table].equals(first[table]), table
     assert list((bronze / STAGING_DIR).iterdir()) == []
+
+
+def test_command_line_replays_the_whole_source_range(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.delenv("PIPELINE_STORAGE_ROOT", raising=False)
+    config = _setup(tmp_path)
+    config_file = tmp_path / "pipeline.yaml"
+    sources_yaml = "".join(f"  {t}: {f}\n" for t, f in config.sources.items())
+    config_file.write_text(
+        f"storage:\n  root: {tmp_path.as_posix()}\nsources:\n{sources_yaml}", encoding="utf-8"
+    )
+
+    assert main(["--config", str(config_file)]) == 0
+
+    output = capsys.readouterr().out
+    assert "3 días (2017-03-15 → 2017-03-17)" in output
+    assert "orders=4 order_items=3 order_payments=2 order_reviews=1" in output
+    assert set(_bronze_state(tmp_path / "bronze")) == {*EVENT_TABLES, *REFERENCE_TABLES}
 
 
 def test_replay_writes_the_expected_bronze_layout(tmp_path: Path) -> None:

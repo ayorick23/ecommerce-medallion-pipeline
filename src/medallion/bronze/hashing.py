@@ -10,7 +10,7 @@ import hashlib
 
 import polars as pl
 
-from bronze.lineage import LINEAGE_COLUMNS
+from medallion.bronze.lineage import LINEAGE_COLUMNS
 
 
 def _encode_value(column: str) -> pl.Expr:
