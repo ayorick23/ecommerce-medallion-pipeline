@@ -237,6 +237,7 @@ Cada decisión de diseño no trivial vive como archivo independiente en
 | [0009](0009-airflow-como-orquestador-vs-adf.md) | Airflow como orquestador (ADF como alternativa) | Aceptada |
 | [0010](0010-sin-dvc-versionamiento-datos.md) | No usar DVC para versionar datos | Aceptada |
 | [0011](0011-bronze-schema-on-read-todo-texto.md) | Bronze schema-on-read: columnas fuente como texto | Aceptada |
-| [0012](0012-idempotencia-bronze-reemplazo-atomico-particion.md) | Idempotencia en Bronze: reemplazo atómico de la partición | Aceptada |
+| [0012](0012-idempotencia-bronze-reemplazo-atomico-particion.md) | Idempotencia en Bronze: reemplazo atómico de la partición | Aceptada — parcialmente superada por 0015 (mecanismo de escritura) |
 | [0013](0013-batch-hash-contenido-canonico.md) | `batch_hash`: SHA-256 del contenido canónico del batch | Aceptada — parcialmente superada por 0014 (serialización) |
 | [0014](0014-batch-hash-codificacion-prefijo-longitud.md) | `batch_hash`: codificación canónica con prefijo de longitud | Aceptada |
+| [0015](0015-bronze-escritura-atomica-por-archivo.md) | Escritura atómica en Bronze: reemplazo de archivo desde staging | Aceptada |

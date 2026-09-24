@@ -95,6 +95,7 @@ los que Silver debe poder convertir, no los físicos de Bronze.
 
 ```text
 bronze/
+├── _staging/                      ← temporales de escritura (ADR 0015)
 ├── orders/dia_simulado=YYYY-MM-DD/part-0.parquet
 ├── order_items/dia_simulado=YYYY-MM-DD/part-0.parquet
 ├── order_payments/dia_simulado=YYYY-MM-DD/part-0.parquet
@@ -108,9 +109,16 @@ bronze/
 
 El nombre de la tabla en disco omite el prefijo `bronze_` (lo da la
 carpeta de la capa). Particionado estilo Hive: Polars, DuckDB y dbt
-reconstruyen `dia_simulado` a partir de la ruta. Un día sin datos para una
-tabla no genera partición vacía; si al reprocesarlo existía una partición
-previa, se elimina (reemplazar por "vacío", coherente con ADR 0012).
+reconstruyen `dia_simulado` a partir de la ruta, así que en las tablas de
+eventos **no se guarda dentro del archivo**; en los snapshots sí va como
+columna y significa "día en que se escribió el contenido actual" (ADR
+0015). Un día sin datos para una tabla no genera partición vacía; si al
+reprocesarlo existía una partición previa, se elimina (reemplazar por
+"vacío", coherente con ADR 0012).
+
+**Escritura atómica** (ADR 0015): cada archivo se escribe en `_staging/` y
+se mueve a su destino con un reemplazo atómico de archivo. Solo
+almacenamiento local en la Fase 2; una raíz remota falla explícitamente.
 
 **Varios eventos el mismo día:** si dos o más timestamps ancla de un mismo
 pedido caen el mismo `dia_simulado` (p. ej. compra y aprobación), se emite

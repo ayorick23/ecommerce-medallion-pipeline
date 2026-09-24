@@ -1,6 +1,8 @@
 # 0012 — Idempotencia en Bronze: reemplazo atómico de la partición del día
 
-**Estado:** Aceptada
+**Estado:** Aceptada — parcialmente superada por
+[0015](0015-bronze-escritura-atomica-por-archivo.md) en el mecanismo de
+escritura (la semántica de reemplazo e idempotencia sigue vigente)
 **Fecha:** 2026-09-23
 
 ## Contexto
