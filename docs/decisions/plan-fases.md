@@ -140,6 +140,9 @@ secciones 3 a 5.
 Diferido a la Fase 5: persistir el reporte de validación en JSON (ADR
 0023).
 
+**Cerrada (2026-09-25):** los 8 puntos se cumplieron. Corrida real en
+`docs/schemas.md`, sección 3 ("Corrida real verificada").
+
 ---
 
 ### Fase 4 — Capa Gold: modelado dimensional
