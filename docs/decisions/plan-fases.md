@@ -106,6 +106,39 @@ implementación real del SCD2 de estados de pedido, fail-fast real
 **Aprendizaje:** validación declarativa de datos, SCD2 en la práctica (no
 solo en teoría).
 
+**Diseño cerrado (2026-09-25):** Silver se reconstruye completo "a la fecha
+D" (ADR 0017) y enmascara los eventos que todavía no ocurrieron (0018); el
+SCD2 se ordena por etapa con `valid_from` que nunca retrocede (0019); las
+reviews que llegan antes que su pedido esperan hasta 120 días (0020); el
+contrato se ajustó con datos medidos (0021: PK de reviews, cuotas `>= 0`,
+códigos postales como texto); montos en `Decimal(18,2)` (0022); todas las
+fallas en una `SilverValidationError` (0023); un archivo por tabla con
+manifiesto al final (0024). Contratos completos en `docs/schemas.md`,
+secciones 3 a 5.
+
+**Criterio de "hecho":** propiedades probadas, no asumidas:
+
+1. `silver_build(D)` produce todas las tablas validadas con Pandera para
+   cualquier D, y no escribe nada si algo falla.
+2. Idempotencia: correr D dos veces da un contenido idéntico.
+3. Sin datos del futuro: para varios D, Silver(D) no contiene ningún
+   evento ni timestamp posterior a D.
+4. Coherencia en el tiempo: si D1 < D2, el historial SCD2 de D1 es el
+   comienzo del de D2 (solo cambia la fila vigente y se cierran sus
+   `valid_to`).
+5. Fail-fast probado: cada tipo de regla dispara `SilverValidationError`
+   con un reporte correcto.
+6. Reviews adelantadas: una pendiente aparece cuando llega su pedido, y
+   una vencida frena el pipeline.
+7. Corrida real conciliada: Silver del último día coincide con la fuente
+   (99,441 pedidos, 112,650 items, 103,886 pagos, 99,224 reviews, 0
+   pendientes), con el tiempo de corrida medido.
+8. ruff, mypy, pre-commit y CI en verde; ADRs escritos; `schemas.md`
+   actualizado; apuntes de la fase.
+
+Diferido a la Fase 5: persistir el reporte de validación en JSON (ADR
+0023).
+
 ---
 
 ### Fase 4 — Capa Gold: modelado dimensional
@@ -228,7 +261,7 @@ Cada decisión de diseño no trivial vive como archivo independiente en
 | --- | --- | --- |
 | [0001](0001-fail-fast-hard-stop-total.md) | Semántica de fail-fast: hard stop total | Aceptada |
 | [0002](0002-desacople-logica-transformacion-airflow.md) | Desacoplar la lógica de transformación de Airflow | Aceptada — parcialmente superada por 0007 (Gold) |
-| [0003](0003-alcance-fail-fast-normalizacion-vs-hard-stop.md) | Alcance del fail-fast: violaciones estructurales vs. normalización | Aceptada |
+| [0003](0003-alcance-fail-fast-normalizacion-vs-hard-stop.md) | Alcance del fail-fast: violaciones estructurales vs. normalización | Aceptada — parcialmente superada por 0021 (ejemplo de reviews) |
 | [0004](0004-bronze-append-only-reemision-por-evento.md) | Bronze append-only con re-emisión por evento | Aceptada |
 | [0005](0005-almacenamiento-por-capa-parquet-duckdb.md) | Almacenamiento por capa: Parquet en Bronze/Silver, DuckDB en Gold | Aceptada |
 | [0006](0006-parquet-plano-vs-delta-lake.md) | Parquet plano en lugar de Delta Lake / Iceberg | Aceptada |
@@ -242,3 +275,11 @@ Cada decisión de diseño no trivial vive como archivo independiente en
 | [0014](0014-batch-hash-codificacion-prefijo-longitud.md) | `batch_hash`: codificación canónica con prefijo de longitud | Aceptada |
 | [0015](0015-bronze-escritura-atomica-por-archivo.md) | Escritura atómica en Bronze: reemplazo de archivo desde staging | Aceptada |
 | [0016](0016-proyecto-instalable-paquete-medallion.md) | Proyecto instalable como paquete `medallion` | Aceptada |
+| [0017](0017-silver-reconstruccion-completa-a-la-fecha.md) | Silver se reconstruye completo "a la fecha D" | Aceptada |
+| [0018](0018-silver-enmascarado-por-llegada.md) | Silver enmascara los eventos que todavía no ocurrieron | Aceptada |
+| [0019](0019-scd2-orden-por-etapa-valid-from-monotonico.md) | SCD2: orden por etapa y `valid_from` que nunca retrocede | Aceptada |
+| [0020](0020-early-arriving-reviews-plazo-de-gracia.md) | Reviews adelantadas: plazo de gracia y luego fail-fast | Aceptada |
+| [0021](0021-ajustes-contrato-silver-datos-medidos.md) | Ajustes al contrato de Silver a partir de datos medidos | Aceptada |
+| [0022](0022-montos-decimal.md) | Montos como `Decimal(18,2)` | Aceptada |
+| [0023](0023-silver-validacion-excepcion-reporte.md) | Validación de Silver: todas las fallas en una `SilverValidationError` | Aceptada |
+| [0024](0024-silver-escritura-manifiesto.md) | Escritura de Silver: un archivo por tabla y un manifiesto | Aceptada |
