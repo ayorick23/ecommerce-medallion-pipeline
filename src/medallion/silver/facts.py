@@ -3,7 +3,8 @@
 Ninguna tabla se filtra por su pedido: un item o un pago sin pedido llega tal
 cual a la validación de FK, que frena el pipeline, en lugar de perderse en
 silencio. La única excepción son las reviews cuyo pedido todavía no llegó:
-esperan en ``pending`` hasta el plazo de gracia (ADR 0020).
+esperan en ``pending`` hasta el plazo de gracia (ADR 0020), que controla
+``validation.expired_reviews``.
 
 Bronze ya ubica cada fila en su día (items y pagos con la compra, reviews con
 su creación), así que leer Bronze hasta D alcanza para saber qué existe a la
@@ -15,8 +16,6 @@ from dataclasses import dataclass
 from datetime import date
 
 import polars as pl
-
-from medallion.silver.validation import Failure, examples
 
 PENDING_DAYS = "dias_pendiente"
 
@@ -48,22 +47,6 @@ def build_reviews(reviews: pl.DataFrame, orders: pl.DataFrame, dia: date) -> Rev
         reviews=with_order.sort("review_id", "order_id"),
         pending=pending.sort("review_id", "order_id"),
     )
-
-
-def expired_reviews(pending: pl.DataFrame, grace_days: int) -> list[Failure]:
-    """Reviews que esperaron a su pedido más de ``grace_days``: huérfanas reales (ADR 0020)."""
-    expired = pending.filter(pl.col(PENDING_DAYS) > grace_days)
-    if expired.height == 0:
-        return []
-    return [
-        Failure(
-            "order_reviews",
-            "fk_huerfana",
-            ("order_id",),
-            expired.height,
-            examples(expired["order_id"]),
-        )
-    ]
 
 
 def build_fact_tables(

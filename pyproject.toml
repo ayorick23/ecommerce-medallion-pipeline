@@ -36,6 +36,9 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Pandera 0.32 usa internamente un `pl.concat` que Polars 1.42 marcó como
+# obsoleto; el aviso no depende de nuestro código. Revisar al actualizar Pandera.
+filterwarnings = ["ignore:the default behavior of `how='horizontal'`:DeprecationWarning:pandera"]
 
 [tool.ruff]
 line-length = 100

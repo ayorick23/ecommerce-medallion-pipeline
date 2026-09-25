@@ -2,14 +2,8 @@ from datetime import date, datetime
 
 import polars as pl
 
-from medallion.silver.facts import (
-    PENDING_DAYS,
-    build_fact_tables,
-    build_reviews,
-    expired_reviews,
-)
+from medallion.silver.facts import PENDING_DAYS, build_fact_tables, build_reviews
 from medallion.silver.tables import DTYPES, TABLE_COLUMNS
-from medallion.silver.validation import Failure
 
 D = date(2018, 6, 22)
 REVIEW_COLUMNS = [spec.name for spec in TABLE_COLUMNS["order_reviews"]]
@@ -92,15 +86,6 @@ def test_a_pending_review_enters_silver_the_day_its_order_arrives() -> None:
 
     assert (before.reviews.height, before.pending.height) == (0, 1)
     assert (after.reviews.height, after.pending.height) == (1, 0)
-
-
-def test_only_reviews_past_the_grace_period_are_orphans() -> None:
-    pending = pl.DataFrame({"order_id": ["o1", "o2", "o3"], PENDING_DAYS: [120, 121, 300]})
-
-    assert expired_reviews(pending, 120) == [
-        Failure("order_reviews", "fk_huerfana", ("order_id",), 2, ("'o2'", "'o3'"))
-    ]
-    assert expired_reviews(pending, 300) == []
 
 
 def test_items_and_payments_are_not_filtered_by_their_order() -> None:
