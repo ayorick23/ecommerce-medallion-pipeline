@@ -1,63 +1,33 @@
-"""Lectura de fuentes y escritura atómica de Bronze (ADR 0011, 0012, 0015).
+"""Lectura de fuentes y escritura de Bronze (ADR 0011, 0012, 0015).
 
-Cada partición de eventos y cada snapshot es un solo archivo Parquet. Se
-escribe primero en ``bronze/_staging/`` y se mueve a su destino con
-``os.replace``, que reemplaza el archivo de forma atómica: un lector nunca ve
-un archivo a medio escribir. Solo almacenamiento local en la Fase 2.
+Cada partición de eventos y cada snapshot es un solo archivo Parquet, escrito
+de forma atómica con ``medallion.common.storage.atomic_write``.
 """
 
-import os
-import uuid
 from datetime import date
 from pathlib import Path
 from typing import Final
 
 import polars as pl
 
+from medallion.common.storage import StorageError, atomic_write, local_path
+
 PARTITION_COLUMN: Final = "dia_simulado"
 PARTITION_FILE: Final = "part-0.parquet"
 SNAPSHOT_FILE: Final = "snapshot.parquet"
-STAGING_DIR: Final = "_staging"
-
-
-class StorageError(ValueError):
-    """La escritura o lectura no se puede hacer con las garantías de Bronze."""
-
-
-def _local_path(uri: str) -> Path:
-    if "://" in uri:
-        raise StorageError(
-            f"Solo se admite almacenamiento local en la Fase 2 (ADR 0015); recibido: {uri!r}"
-        )
-    return Path(uri)
 
 
 def partition_path(bronze_uri: str, table: str, dia: date) -> Path:
-    return (
-        _local_path(bronze_uri) / table / f"{PARTITION_COLUMN}={dia.isoformat()}" / PARTITION_FILE
-    )
+    return local_path(bronze_uri) / table / f"{PARTITION_COLUMN}={dia.isoformat()}" / PARTITION_FILE
 
 
 def snapshot_path(bronze_uri: str, table: str) -> Path:
-    return _local_path(bronze_uri) / table / SNAPSHOT_FILE
+    return local_path(bronze_uri) / table / SNAPSHOT_FILE
 
 
 def read_source(uri: str) -> pl.DataFrame:
     """Lee un CSV fuente con todas las columnas como texto (ADR 0011)."""
-    return pl.read_csv(_local_path(uri), infer_schema=False)
-
-
-def _atomic_write(df: pl.DataFrame, target: Path, *, bronze_uri: str, table: str) -> None:
-    staging = _local_path(bronze_uri) / STAGING_DIR
-    staging.mkdir(parents=True, exist_ok=True)
-    tmp = staging / f"{table}-{uuid.uuid4().hex}.parquet"
-    try:
-        df.write_parquet(tmp)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        os.replace(tmp, target)
-    except BaseException:
-        tmp.unlink(missing_ok=True)
-        raise
+    return pl.read_csv(local_path(uri), infer_schema=False)
 
 
 def write_partition(df: pl.DataFrame, bronze_uri: str, table: str, dia: date) -> None:
@@ -80,12 +50,12 @@ def write_partition(df: pl.DataFrame, bronze_uri: str, table: str, dia: date) ->
         if target.parent.exists():
             target.parent.rmdir()
         return
-    _atomic_write(df.drop(PARTITION_COLUMN), target, bronze_uri=bronze_uri, table=table)
+    atomic_write(target, bronze_uri, df.drop(PARTITION_COLUMN).write_parquet)
 
 
 def write_snapshot(df: pl.DataFrame, bronze_uri: str, table: str) -> None:
     """Reemplaza el snapshot completo de una tabla de referencia."""
-    _atomic_write(df, snapshot_path(bronze_uri, table), bronze_uri=bronze_uri, table=table)
+    atomic_write(snapshot_path(bronze_uri, table), bronze_uri, df.write_parquet)
 
 
 def snapshot_batch_hash(bronze_uri: str, table: str) -> str | None:
