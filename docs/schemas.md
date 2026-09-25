@@ -494,6 +494,13 @@ hora:
 "aprobado" queda con duración cero: el pedido pasó por esa etapa, pero
 ninguna consulta "en el instante X" lo encuentra en ella (ADR 0019).
 
+**Medido sobre el replay completo (2026-09-25):** 392,856 eventos; 1,443
+filas ajustadas en 1,382 pedidos; 0 intervalos negativos; exactamente una
+fila vigente por pedido. Hay 2,748 intervalos de duración cero: 1,443 por
+el ajuste y 1,305 porque la fuente trae dos eventos con la misma hora (1,296
+pedidos aprobados en el mismo segundo de la compra, 9 entregados en el
+mismo segundo del despacho).
+
 Esta tabla es la que responde "¿cuál era el estado de este pedido en la
 fecha X?" — no se modela como fact en Gold (el plan solo pide `fct_pedidos`
 y `fct_pagos`); Gold consume el estado **actual** (`is_current = true`) a
