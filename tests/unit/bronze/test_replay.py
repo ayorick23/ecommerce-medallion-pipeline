@@ -9,7 +9,7 @@ from medallion.bronze.ingest import TableResult
 from medallion.bronze.replay import replay, source_day_range
 from medallion.common.config import PipelineConfig
 
-CONFIG = PipelineConfig(storage_root="unused", sources={})
+CONFIG = PipelineConfig(storage_root="unused", sources={}, early_arriving_grace_days=120)
 
 
 def _text(data: dict[str, list[str | None]]) -> pl.DataFrame:

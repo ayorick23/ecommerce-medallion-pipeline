@@ -22,3 +22,9 @@ sources:
   sellers: olist_sellers_dataset.csv
   geolocation: olist_geolocation_dataset.csv
   category_translation: product_category_name_translation.csv
+
+silver:
+  # Días que una review puede esperar a que llegue su pedido antes de
+  # considerarse huérfana y frenar el pipeline (ADR 0020). El máximo
+  # observado en Olist es 111.
+  early_arriving_grace_days: 120

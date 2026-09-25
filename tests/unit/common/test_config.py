@@ -16,7 +16,11 @@ storage:
   root: ./data
 sources:
   orders: olist_orders_dataset.csv
+silver:
+  early_arriving_grace_days: 120
 """
+
+BASE = "storage:\n  root: ./data\nsources:\n  orders: a.csv\n"
 
 
 @pytest.fixture(autouse=True)
@@ -36,6 +40,7 @@ def test_loads_valid_config(tmp_path: Path) -> None:
 
     assert config.storage_root == "./data"
     assert config.sources == {"orders": "olist_orders_dataset.csv"}
+    assert config.early_arriving_grace_days == 120
 
 
 def test_env_var_overrides_storage_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -55,6 +60,7 @@ def test_config_path_can_come_from_env(tmp_path: Path, monkeypatch: pytest.Monke
 def test_repo_config_declares_all_olist_sources() -> None:
     config = load_config(Path(__file__).parents[3] / "config" / "pipeline.yaml")
 
+    assert config.early_arriving_grace_days == 120
     assert set(config.sources) == {
         "orders",
         "order_items",
@@ -76,8 +82,24 @@ def test_repo_config_declares_all_olist_sources() -> None:
         "storage:\n  root: ./data\n",
         "storage:\n  root: ./data\nsources: {}\n",
         "storage:\n  root: ./data\nsources:\n  orders: 3\n",
+        BASE,
+        BASE + "silver:\n  early_arriving_grace_days: -1\n",
+        BASE + "silver:\n  early_arriving_grace_days: 120.5\n",
+        BASE + "silver:\n  early_arriving_grace_days: true\n",
+        BASE + "silver: 120\n",
     ],
-    ids=["raiz-no-mapeo", "sin-storage", "sin-sources", "sources-vacio", "archivo-no-texto"],
+    ids=[
+        "raiz-no-mapeo",
+        "sin-storage",
+        "sin-sources",
+        "sources-vacio",
+        "archivo-no-texto",
+        "sin-plazo",
+        "plazo-negativo",
+        "plazo-decimal",
+        "plazo-booleano",
+        "silver-no-mapeo",
+    ],
 )
 def test_invalid_config_raises(tmp_path: Path, content: str) -> None:
     with pytest.raises(ConfigError):
@@ -101,13 +123,15 @@ def test_missing_file_raises(tmp_path: Path) -> None:
     ],
 )
 def test_source_uri_works_for_local_and_remote_roots(root: str, expected: str) -> None:
-    config = PipelineConfig(storage_root=root, sources={"orders": "orders.csv"})
+    config = PipelineConfig(
+        storage_root=root, sources={"orders": "orders.csv"}, early_arriving_grace_days=120
+    )
 
     assert config.source_uri("orders") == expected
 
 
 def test_source_uri_unknown_table_raises() -> None:
-    config = PipelineConfig(storage_root="./data", sources={})
+    config = PipelineConfig(storage_root="./data", sources={}, early_arriving_grace_days=120)
 
     with pytest.raises(ConfigError, match="order_items"):
         config.source_uri("order_items")
