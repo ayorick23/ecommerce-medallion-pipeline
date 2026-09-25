@@ -4,7 +4,8 @@
 > transformación (principio rector #1 de `docs/decisions/plan-fases.md`).
 > Decisiones de arquitectura no triviales referenciadas están en
 > `docs/decisions/` (ADRs 0001-0004; stack y almacenamiento en 0005-0009;
-> implementación física de Bronze en 0010-0015).
+> implementación física de Bronze en 0010-0015; diseño de Silver en
+> 0017-0025).
 
 ## Convenciones generales
 
@@ -72,9 +73,9 @@ Columnas: `order_id`, `payment_sequential` (int), `payment_type` (string),
 
 ### `bronze_order_reviews`
 
-Copia cruda de `order_reviews.csv`. Grano nominal `review_id` (con
-duplicados conocidos, sin deduplicar en Bronze — eso es trabajo de
-Silver). Columnas: `review_id`, `order_id`, `review_score` (int),
+Copia cruda de `order_reviews.csv`. Grano `(review_id, order_id)`: un
+mismo `review_id` puede aparecer asociado a varios pedidos (ADR 0021).
+Columnas: `review_id`, `order_id`, `review_score` (int),
 `review_comment_title` (string, nullable), `review_comment_message`
 (string, nullable), `review_creation_date` (datetime),
 `review_answer_timestamp` (datetime).
@@ -136,18 +137,17 @@ canónica usa prefijo de longitud por valor (ADR 0014).
 re-emisión se aplica mecánicamente (ADR 0004), aunque produzca llegadas
 "antes de tiempo":
 
-- 166 pedidos tienen algún evento con timestamp **anterior** a su
-  `order_purchase_timestamp` → ese pedido aparece en Bronze en un día
-  previo a su compra (y antes que sus `order_items`/`order_payments`).
+- 166 pedidos tienen `order_delivered_carrier_date` con hora **anterior**
+  a su `order_purchase_timestamp`. En 2 de ellos cae en un **día**
+  anterior, y esos 2 aparecen en Bronze antes que su compra (y antes que
+  sus `order_items`/`order_payments`). Corregido el 2026-09-25: antes decía
+  que eran los 166.
 - 64 reviews tienen `review_creation_date` anterior al día de compra de
   su pedido → la review llega a Bronze antes que el pedido.
 
-Consecuencia para la Fase 3 (**pendiente de diseño**): en un replay
-incremental, Silver verá **huérfanos temporales de FK** (*early-arriving
-facts*: el padre llegará en un día posterior). La regla fail-fast de
-"huérfano de FK no documentado" (sección 4) debe distinguir "el padre aún
-no llegó" de "el padre no existe", o Silver frenaría el pipeline en días
-legítimos.
+Resuelto en la Fase 3: los pedidos adelantados se ubican en el día de su
+compra por el ajuste del SCD2 (ADR 0019), y las reviews adelantadas
+esperan a su pedido con un plazo de gracia (ADR 0020).
 
 **Pedidos sin items ni pagos — válidos, no son huérfanos:** 775 pedidos no
 tienen ninguna fila en `order_items` (603 `unavailable`, 164 `canceled`, 5
@@ -184,67 +184,209 @@ quedó vacío; 2,581 archivos Parquet, 67.7 MB.
 
 ## 3. Capa Silver
 
-Silver aplica: deduplicación, normalización de catálogo (ADR 0003),
-resolución de tipos, construcción del historial SCD2, y validación
-fail-fast (sección 4).
+Silver(D) es una **foto limpia de todo lo que se sabe al final del día D**:
+se reconstruye completa en cada corrida a partir de Bronze hasta D (ADR
+0017) y no incluye eventos que todavía no ocurrieron (ADR 0018). Aplica:
+colapso de re-emisiones, resolución de tipos, enmascarado a la fecha D,
+construcción del historial SCD2, normalización de catálogo (ADR 0003) y
+validación fail-fast (sección 4).
+
+### Convenciones de Silver
+
+- **Tipos físicos:** identificadores y textos `String`; timestamps
+  `Datetime` (microsegundos, sin zona horaria: hora local de la fuente);
+  enteros `Int64`; montos `Decimal(18,2)` (ADR 0022); coordenadas
+  `Float64`; códigos postales `String` de 5 dígitos (ADR 0021).
+- **Tablas de hechos** (`orders`, `order_status_history`, `order_items`,
+  `order_payments`, `order_reviews`): se enmascaran a la fecha D (ADR
+  0018). **Tablas de referencia:** snapshots completos, sin enmascarar.
+- **Sin columnas de linaje:** el linaje es por corrida, en
+  `_manifest.json` (ADR 0024).
+- **Filas:** cifras de Silver en el último día del replay (2018-10-17), que
+  deben coincidir con la fuente (criterio de "hecho" de la Fase 3).
 
 ### `silver_orders`
 
-Grano: `order_id` (deduplicado de las re-emisiones de Bronze — el
-contenido es idéntico entre re-emisiones, se conserva una sola fila).
-Mismas columnas que `bronze_orders` menos las de linaje.
-**PK:** `order_id`. **FK:** `customer_id → silver_customers.customer_id`.
+Una fila por pedido: colapsa las re-emisiones de Bronze (el contenido es
+idéntico entre ellas). **PK:** `order_id`. **FK:** `customer_id →
+silver_customers`. **Filas:** 99,441.
+
+| Columna | Tipo | Nullable | Notas |
+| --- | --- | --- | --- |
+| `order_id` | String | no | |
+| `customer_id` | String | no | |
+| `order_status` | String | no | estado **final** según la fuente, aunque D sea anterior (ADR 0018); el estado vigente a la fecha D está en el SCD2 |
+| `order_purchase_timestamp` | Datetime | no | |
+| `order_approved_at` | Datetime | sí | nulo si el evento no ocurrió o no ocurrió todavía a la fecha D |
+| `order_delivered_carrier_date` | Datetime | sí | ídem |
+| `order_delivered_customer_date` | Datetime | sí | ídem |
+| `order_estimated_delivery_date` | Datetime | no | promesa conocida desde la compra: no se enmascara |
+
+Un pedido existe en Silver(D) si su día de compra es `<= D`. Qué eventos
+ocurrieron lo decide el `valid_from` ajustado del SCD2 (sección 5), para que
+ambas tablas coincidan; el valor mostrado es el crudo.
 
 ### `silver_order_status_history` (SCD2)
 
-Ver diseño completo en sección 5. Grano: `(order_id, status_event)`.
+Ver diseño completo en sección 5. **PK:** `(order_id, status_event)`.
+**FK:** `order_id → silver_orders`. **Filas:** 392,856 (un evento por
+timestamp no nulo).
 
 ### `silver_order_items`
 
-Igual a `bronze_order_items`, tipado/validado.
 **PK:** `(order_id, order_item_id)`. **FK:** `order_id → silver_orders`,
 `product_id → silver_products`, `seller_id → silver_sellers`.
+**Filas:** 112,650.
+
+| Columna | Tipo | Nullable | Notas |
+| --- | --- | --- | --- |
+| `order_id` | String | no | |
+| `order_item_id` | Int64 | no | posición del item en el pedido (1..21) |
+| `product_id` | String | no | |
+| `seller_id` | String | no | |
+| `shipping_limit_date` | Datetime | no | plazo del vendedor, conocido desde la compra: no se enmascara |
+| `price` | Decimal(18,2) | no | `>= 0` |
+| `freight_value` | Decimal(18,2) | no | `>= 0` |
 
 ### `silver_order_payments`
 
-Igual a `bronze_order_payments`, tipado/validado.
-**PK:** `(order_id, payment_sequential)`. **FK:** `order_id → silver_orders`.
+**PK:** `(order_id, payment_sequential)`. **FK:** `order_id →
+silver_orders`. **Filas:** 103,886.
+
+| Columna | Tipo | Nullable | Notas |
+| --- | --- | --- | --- |
+| `order_id` | String | no | |
+| `payment_sequential` | Int64 | no | |
+| `payment_type` | String | no | incluye 3 pagos `not_defined` con monto 0, válidos |
+| `payment_installments` | Int64 | no | `>= 0`: 2 pagos con 0 cuotas (ADR 0021) |
+| `payment_value` | Decimal(18,2) | no | `>= 0` |
 
 ### `silver_order_reviews`
 
-Deduplicado por `review_id`, quedándose con la fila de
-`review_answer_timestamp` más reciente cuando hay duplicados.
-**PK:** `review_id` (ya limpia tras el dedup). **FK:** `order_id → silver_orders`.
+Una fila por vínculo review–pedido: la relación es de muchos a muchos (ADR
+0021). **PK:** `(review_id, order_id)`. **FK:** `order_id → silver_orders`.
+**Filas:** 99,224 (98,410 reviews distintas).
+
+| Columna | Tipo | Nullable | Notas |
+| --- | --- | --- | --- |
+| `review_id` | String | no | |
+| `order_id` | String | no | |
+| `review_score` | Int64 | no | en `[1, 5]` |
+| `review_comment_title` | String | sí | |
+| `review_comment_message` | String | sí | |
+| `review_creation_date` | Datetime | no | la review existe en Silver(D) si este día es `<= D` |
+| `review_answer_timestamp` | Datetime | sí | nulo si la respuesta es posterior a D (en la fuente nunca es nulo) |
+
+**Para contar reviews hay que usar `COUNT(DISTINCT review_id)`:** un
+`COUNT(*)` suma 814 de más, porque una misma review puede estar asociada a
+varios pedidos de la misma persona. Una review cuyo pedido todavía no llegó
+no está en esta tabla sino en `_pendientes/` (ADR 0020).
 
 ### `silver_customers`
 
-Igual a `bronze_customers`, tipado/validado.
-**PK:** `customer_id`. Se conserva `customer_unique_id` como columna (no
-como PK — la resolución a persona real ocurre en Gold, `dim_cliente`).
+**PK:** `customer_id`. **Filas:** 99,441. Columnas: `customer_id`,
+`customer_unique_id`, `customer_zip_code_prefix` (String, 5 dígitos),
+`customer_city`, `customer_state` — ninguna nullable. Se conserva
+`customer_unique_id` como columna, no como PK: la resolución a persona real
+ocurre en Gold (`dim_cliente`).
 
 ### `silver_products`
 
-Igual a `bronze_products` + normalización de catálogo (ADR 0003):
-`product_category_name` nulo → `"sem_categoria"`;
-`product_category_name_english` resuelto vía join contra
-`silver_category_translation`, con fallback al nombre en portugués si no
-hay traducción. **PK:** `product_id`.
+Tipado + normalización de catálogo (ADR 0003). **PK:** `product_id`.
+**Filas:** 32,951.
+
+| Columna | Tipo | Nullable | Notas |
+| --- | --- | --- | --- |
+| `product_id` | String | no | |
+| `product_category_name` | String | no | nulo en la fuente → `"sem_categoria"` (610 productos) |
+| `product_category_name_english` | String | no | vía `silver_category_translation`; sin traducción → nombre en portugués (`pc_gamer`, `portateis_cozinha_e_preparadores_de_alimentos`) |
+| `product_name_length` | Int64 | sí | renombrada desde `product_name_lenght` (errata de la fuente, ADR 0021) |
+| `product_description_length` | Int64 | sí | renombrada desde `product_description_lenght` |
+| `product_photos_qty` | Int64 | sí | |
+| `product_weight_g` | Int64 | sí | |
+| `product_length_cm` | Int64 | sí | |
+| `product_height_cm` | Int64 | sí | |
+| `product_width_cm` | Int64 | sí | |
+
+Los nulos en las medidas son huecos de catálogo, no disparan fail-fast: los
+610 productos sin categoría tampoco tienen nombre, descripción ni fotos, y
+2 productos no tienen dimensiones.
 
 ### `silver_sellers`
 
-Igual a `bronze_sellers`, tipado/validado. **PK:** `seller_id`.
+**PK:** `seller_id`. **Filas:** 3,095. Columnas: `seller_id`,
+`seller_zip_code_prefix` (String, 5 dígitos), `seller_city`,
+`seller_state` — ninguna nullable.
 
 ### `silver_geolocation_agg`
 
 Agregación de `bronze_geolocation` por `geolocation_zip_code_prefix`
-(promedio de `lat`/`lng`) — la fuente no es 1:1 por zip prefix (Fase 0:
-19,015 prefijos únicos en 1M de filas), así que no es utilizable como
-dimensión sin agregar antes. **PK:** `geolocation_zip_code_prefix`.
+(promedio de `lat`/`lng`) — la fuente no es 1:1 por código postal (1,000,163
+filas para 19,015 códigos), así que no es utilizable como dimensión sin
+agregar antes. Antes de promediar se descartan las filas con coordenadas
+fuera de Brasil (ADR 0025): 42 filas en 21 códigos, y 5 códigos se quedan
+sin ninguna fila válida. **PK:** `geolocation_zip_code_prefix`.
+**Filas:** 19,010. Columnas: `geolocation_zip_code_prefix` (String),
+`geolocation_lat` y `geolocation_lng` (Float64, ninguna nullable).
+
+No es FK de clientes ni vendedores: 278 clientes y 7 vendedores tienen un
+código postal sin geolocalización, y eso no es un error (es una tabla de
+consulta). Los 5 códigos descartados se suman a ese mismo caso.
 
 ### `silver_category_translation`
 
 Igual a `bronze_category_translation`, sin cambios. **PK:**
-`product_category_name`.
+`product_category_name`. **Filas:** 71.
+
+### Implementación física de Silver (Fase 3)
+
+**Layout** (relativo a la raíz de almacenamiento configurable, ADR 0008),
+sin partición (ADR 0024):
+
+```text
+silver/
+├── _staging/                          ← temporales de escritura
+├── _manifest.json                     ← se escribe al final de cada corrida
+├── _pendientes/order_reviews.parquet  ← reviews esperando su pedido (ADR 0020)
+├── orders/part-0.parquet
+├── order_status_history/part-0.parquet
+├── order_items/part-0.parquet
+├── order_payments/part-0.parquet
+├── order_reviews/part-0.parquet
+├── customers/part-0.parquet
+├── products/part-0.parquet
+├── sellers/part-0.parquet
+├── geolocation_agg/part-0.parquet
+└── category_translation/part-0.parquet
+```
+
+**Orden de escritura** (ADR 0024): construir y validar todo en memoria →
+borrar `_manifest.json` → escribir cada archivo de forma atómica (staging +
+`os.replace`, mismo mecanismo que Bronze, ADR 0015) → escribir
+`_manifest.json`. Si falta el manifiesto, o su `as_of` no es el esperado,
+Silver está incompleto y no se debe leer.
+
+**Manifiesto:** `as_of` (fecha D), `built_at`, rango y cantidad de días de
+Bronze leídos, filas por tabla y cantidad de reviews pendientes.
+
+**Reviews pendientes** (ADR 0020): mismas columnas que
+`silver_order_reviews` más `dias_pendiente`. Plazo de gracia configurable
+en `config/pipeline.yaml` (120 días); en el último día del replay el
+archivo debe estar vacío.
+
+**Corrida real verificada (2026-09-25):** `uv run silver-build --dia
+2018-10-17` sobre el Bronze completo tarda ~1.8 s y escribe 31 MB. Leyó 710
+días de Bronze (los días con alguna partición, incluidos los que solo
+tienen reviews). Todas las tablas coinciden con la fuente: 99,441 pedidos,
+392,856 eventos de estado, 112,650 items, 103,886 pagos, 99,224 reviews,
+99,441 clientes, 32,951 productos, 3,095 vendedores, 19,010 códigos
+postales y 71 categorías, con 0 reviews pendientes y 0 fallas de
+validación. Reconstruir el mismo día, aun con otro día construido en el
+medio, deja los 11 Parquet idénticos byte a byte. DuckDB los lee con los
+tipos del contrato (`DECIMAL(18,2)`, `TIMESTAMP`, `BOOLEAN`), y la suma de
+pagos da 16,008,872.12 exacto. En días intermedios, 0 eventos posteriores
+a D; el 2018-08-04, por ejemplo, hay 21 reviews pendientes (la más antigua,
+con 91 días).
 
 ---
 
@@ -252,26 +394,34 @@ Igual a `bronze_category_translation`, sin cambios. **PK:**
 
 Semántica: hard-stop total del batch (ADR 0001), alcance definido en
 ADR 0003. Estas son las reglas concretas a implementar — no hay ambigüedad
-pendiente. Bronze→Silver se implementa como schemas Pandera (Fase 3);
-Silver→Gold, como tests de dbt (Fase 4, ADR 0007). Cambia la herramienta
-según la transición, no la regla.
+pendiente. Bronze→Silver se implementa como schemas Pandera más chequeos
+entre tablas (Fase 3); Silver→Gold, como tests de dbt (Fase 4, ADR 0007).
+Cambia la herramienta según la transición, no la regla.
 
 ### Bronze → Silver (dispara fail-fast)
 
-- Nulo en cualquier columna marcada "no" en la tabla de nullability de la
-  sección 2/3 (ej. `order_id`, `customer_id`, `product_id`, `order_status`,
+Todas las fallas de una corrida se reportan juntas en una sola
+`SilverValidationError` y no se escribe nada (ADR 0023).
+
+- Nulo en cualquier columna marcada "no" en las tablas de la sección 3
+  (ej. `order_id`, `customer_id`, `product_id`, `order_status`,
   `price`, `freight_value`, `payment_value`).
-- Violación de PK después de aplicar la deduplicación documentada (ej.
-  `review_id` repetido tras quedarse con el más reciente).
-- Huérfano de FK no documentado como esperado — hoy 0 casos en:
-  `order_items→orders`, `order_items→products`, `order_items→sellers`,
-  `order_payments→orders`, `order_reviews→orders`, `orders→customers`. Si
-  aparece uno, es una regresión de la fuente y debe frenar el pipeline.
-- Tipo no parseable (ej. un valor de `price` que no convierte a `float`,
-  un timestamp fuera del formato esperado en una columna no documentada
-  como "nulo válido").
+- Violación de PK (sección 3). La única deduplicación es el colapso de las
+  re-emisiones de `orders`; en reviews la PK es `(review_id, order_id)`
+  (ADR 0021).
+- Huérfano de FK — hoy 0 casos en: `order_items→orders`,
+  `order_items→products`, `order_items→sellers`, `order_payments→orders`,
+  `orders→customers`. En `order_reviews→orders`, una review cuyo pedido
+  todavía no llegó queda pendiente hasta 120 días; si el plazo vence, es
+  un huérfano real (ADR 0020). Si aparece un huérfano, es una regresión de
+  la fuente y debe frenar el pipeline.
+- Tipo no parseable: un timestamp fuera del formato
+  `YYYY-MM-DD HH:MM:SS` en una columna no documentada como "nulo válido";
+  un entero que no convierte; un monto que no cumple
+  `^-?\d+(\.\d{1,2})?$` (más de 2 decimales se truncaría en silencio, ADR
+  0022); un código postal que no cumple `^\d{5}$` (ADR 0021).
 - Medida imposible: `price < 0`, `freight_value < 0`, `payment_value < 0`,
-  `payment_installments < 1`, `review_score` fuera de `[1, 5]`.
+  `payment_installments < 0` (ADR 0021), `review_score` fuera de `[1, 5]`.
 
 ### Bronze → Silver (NO dispara fail-fast — se normaliza)
 
@@ -280,6 +430,13 @@ según la transición, no la regla.
   portugués.
 - Timestamps de `orders` nulos cuando el `order_status` explica el nulo
   (ej. pedido no entregado sin `order_delivered_customer_date`).
+- Timestamps de `orders` fuera del orden de etapa → `valid_from` ajustado
+  en el SCD2, conservando el crudo (ADR 0019).
+- Review cuyo pedido todavía no llegó, dentro del plazo de gracia →
+  pendiente (ADR 0020).
+- Medidas nulas en `products` (huecos de catálogo, sección 3).
+- Coordenadas de geolocalización fuera de Brasil → se descartan antes de
+  promediar (ADR 0025).
 
 ### Silver → Gold (dispara fail-fast)
 
@@ -297,42 +454,77 @@ según la transición, no la regla.
 ## 5. Diseño SCD2 — `silver_order_status_history`
 
 **Objetivo:** reconstruir la trayectoria de estados de un pedido a partir
-de las re-emisiones de `bronze_orders` (ADR 0004), sin que Olist provea un
-log de cambios explícito.
+de sus timestamps (ADR 0004), sin que Olist provea un log de cambios
+explícito, y poder responder "¿en qué estado estaba el pedido en el
+instante X?".
 
-**Construcción:** para cada `order_id`, se toma su fila de `bronze_orders`
-(el contenido es idéntico en todas sus re-emisiones) y se "despliega"
-(unpivot) cada uno de sus 4 timestamps no nulos en una fila de evento,
-ordenadas cronológicamente:
+**Construcción** (ADR 0019): cada uno de los 4 timestamps no nulos de un
+pedido genera una fila de evento. Las filas se ordenan por **etapa**, no por
+hora:
 
-| `order_id` | `status_event` | Timestamp fuente |
+| Etapa | `status_event` | Timestamp fuente |
 | --- | --- | --- |
-| — | `creado` | `order_purchase_timestamp` |
-| — | `aprobado` | `order_approved_at` |
-| — | `despachado` | `order_delivered_carrier_date` |
-| — | `entregado` | `order_delivered_customer_date` |
+| 1 | `creado` | `order_purchase_timestamp` |
+| 2 | `aprobado` | `order_approved_at` |
+| 3 | `despachado` | `order_delivered_carrier_date` |
+| 4 | `entregado` | `order_delivered_customer_date` |
 
-Un pedido cancelado antes de aprobarse, por ejemplo, genera solo el evento
-`creado` (los demás timestamps son nulos → no generan fila).
+- Un timestamp nulo no genera fila (un pedido cancelado antes de aprobarse
+  tiene solo `creado`; 14 pedidos pasan de `creado` a `despachado` sin
+  `aprobado`).
+- `valid_from` = el máximo entre el timestamp crudo del evento y el
+  `valid_from` del evento anterior del pedido: nunca retrocede. Corrige a
+  los 1,382 pedidos (1.4%) cuyas horas están fuera del orden de etapa.
+- `valid_to` = `valid_from` del siguiente evento visible del pedido; nulo en
+  el último. Intervalos semiabiertos `[valid_from, valid_to)`: en cada
+  instante hay exactamente un estado vigente.
+- A la fecha D solo son visibles los eventos cuyo `valid_from` cae en un día
+  `<= D` (ADR 0018).
 
 **Schema de `silver_order_status_history`:**
 
-| Columna | Tipo | Notas |
-| --- | --- | --- |
-| `order_id` | string | FK a `silver_orders` |
-| `status_event` | string | uno de `creado / aprobado / despachado / entregado` |
-| `order_status_raw` | string | el `order_status` final tal cual la fuente (contexto) |
-| `valid_from` | datetime | timestamp del evento |
-| `valid_to` | datetime, nullable | timestamp del siguiente evento del mismo pedido; nulo si es el más reciente |
-| `is_current` | bool | `true` solo en la fila con `valid_to` nulo |
+| Columna | Tipo | Nullable | Notas |
+| --- | --- | --- | --- |
+| `order_id` | String | no | FK a `silver_orders` |
+| `status_event` | String | no | uno de `creado / aprobado / despachado / entregado` |
+| `order_status_raw` | String | no | el `order_status` final tal cual la fuente (contexto) |
+| `event_timestamp` | Datetime | no | timestamp crudo del evento |
+| `valid_from` | Datetime | no | inicio del intervalo, ajustado para no retroceder |
+| `valid_to` | Datetime | sí | `valid_from` del siguiente evento visible; nulo si es el vigente |
+| `is_current` | Boolean | no | `true` solo en la fila con `valid_to` nulo |
+| `is_adjusted` | Boolean | no | `true` si `valid_from` difiere de `event_timestamp` |
 
 **PK:** `(order_id, status_event)`. Máximo 4 filas por pedido.
+
+**Ejemplo con ajuste** (pedido `000576fe…`, despachado antes de aprobarse):
+
+| `status_event` | `event_timestamp` | `valid_from` | `valid_to` | `is_adjusted` |
+| --- | --- | --- | --- | --- |
+| creado | 07-04 12:08:27 | 07-04 12:08:27 | 07-05 16:35:48 | false |
+| aprobado | 07-05 16:35:48 | 07-05 16:35:48 | 07-05 16:35:48 | false |
+| despachado | 07-05 12:15:00 | 07-05 16:35:48 | 07-09 14:04:07 | true |
+| entregado | 07-09 14:04:07 | 07-09 14:04:07 | null | false |
+
+"aprobado" queda con duración cero: el pedido pasó por esa etapa, pero
+ninguna consulta "en el instante X" lo encuentra en ella (ADR 0019).
+
+**Medido sobre el replay completo (2026-09-25):** 392,856 eventos; 1,443
+filas ajustadas en 1,382 pedidos; 0 intervalos negativos; exactamente una
+fila vigente por pedido. Hay 2,748 intervalos de duración cero: 1,443 por
+el ajuste y 1,305 porque la fuente trae dos eventos con la misma hora (1,296
+pedidos aprobados en el mismo segundo de la compra, 9 entregados en el
+mismo segundo del despacho).
 
 Esta tabla es la que responde "¿cuál era el estado de este pedido en la
 fecha X?" — no se modela como fact en Gold (el plan solo pide `fct_pedidos`
 y `fct_pagos`); Gold consume el estado **actual** (`is_current = true`) a
 través de `dim_estado_pedido`. El historial completo queda disponible en
 Silver para quien lo necesite consultar directamente.
+
+**Pendiente para la Fase 4:** el SCD2 no representa estados sin timestamp
+(`canceled`, `unavailable`, etc.). Un pedido cancelado después de
+aprobarse tiene `aprobado` como vigente y `order_status_raw = canceled`;
+`dim_estado_pedido` tiene que decidir cómo combinar ambos.
 
 ---
 
@@ -394,7 +586,7 @@ erDiagram
 
     dim_cliente {
         string customer_unique_id PK
-        int customer_zip_code_prefix
+        string customer_zip_code_prefix
         string customer_city
         string customer_state
     }
@@ -406,7 +598,7 @@ erDiagram
     }
     dim_vendedor {
         string seller_id PK
-        int seller_zip_code_prefix
+        string seller_zip_code_prefix
         string seller_city
         string seller_state
     }

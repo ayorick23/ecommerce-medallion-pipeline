@@ -51,6 +51,7 @@ def _config(root: Path) -> PipelineConfig:
     return PipelineConfig(
         storage_root=str(root),
         sources={t: f"{t}.csv" for t in (*EVENT_TABLES, *REFERENCE_TABLES)},
+        early_arriving_grace_days=120,
     )
 
 

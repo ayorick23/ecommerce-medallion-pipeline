@@ -33,6 +33,8 @@ def join_uri(*parts: str) -> str:
 class PipelineConfig:
     storage_root: str
     sources: dict[str, str]
+    # Días que una review puede esperar a su pedido antes de ser huérfana (ADR 0020).
+    early_arriving_grace_days: int
 
     def layer_uri(self, layer: Layer) -> str:
         return join_uri(self.storage_root, layer)
@@ -74,5 +76,15 @@ def load_config(path: str | Path | None = None) -> PipelineConfig:
     ):
         raise ConfigError(f"{config_path}: 'sources' debe ser un mapeo no vacío tabla → archivo")
 
+    silver = raw.get("silver")
+    grace_days = silver.get("early_arriving_grace_days") if isinstance(silver, dict) else None
+    # bool es subclase de int en Python: `true` no debe pasar como 1 día.
+    if not isinstance(grace_days, int) or isinstance(grace_days, bool) or grace_days < 0:
+        raise ConfigError(f"{config_path}: falta 'silver.early_arriving_grace_days' (entero >= 0)")
+
     storage_root = os.environ.get(STORAGE_ROOT_ENV) or storage["root"]
-    return PipelineConfig(storage_root=storage_root, sources=dict(sources))
+    return PipelineConfig(
+        storage_root=storage_root,
+        sources=dict(sources),
+        early_arriving_grace_days=grace_days,
+    )

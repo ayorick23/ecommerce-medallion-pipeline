@@ -24,6 +24,7 @@ El objetivo no es solo mover datos de un lado a otro, sino demostrar las prácti
   - [Estado del proyecto](#estado-del-proyecto)
   - [Cómo ejecutarlo](#cómo-ejecutarlo)
     - [Replay de Bronze](#replay-de-bronze)
+    - [Construir Silver](#construir-silver)
     - [Tests y calidad de código](#tests-y-calidad-de-código)
     - [Airflow](#airflow)
   - [Roadmap y decisiones de arquitectura](#roadmap-y-decisiones-de-arquitectura)
@@ -43,7 +44,7 @@ Un e-commerce recibe cada día pedidos, pagos y reseñas, y cada pedido cambia d
 
 - ✅ **Simula la llegada diaria de los datos:** un replay recorre los 774 días del dataset; cada pedido "llega" de nuevo cada día en que cambia de estado (ADR 0004).
 - ✅ **Bronze:** guarda por día una copia fiel de lo que llegó (todo como texto, sin corregir nada), particionada por `dia_simulado`, con linaje por fila (`ingested_at`, `source_file`, `batch_hash`). Reprocesar un día reemplaza su partición de forma atómica: nunca duplica ni deja archivos a medio escribir.
-- 🔜 **Silver** (Fase 3): validación declarativa con Pandera que detiene el pipeline ante violaciones estructurales, normalización de catálogo e historial de estados de pedido (SCD2).
+- ✅ **Silver:** reconstruye "a la fecha D" una foto limpia y tipada de todo lo que se sabía al cierre de ese día, **sin filtrar información del futuro** (ADR 0017, 0018). Incluye el historial de estados de cada pedido como SCD2 (una versión vigente por instante, aun con timestamps de la fuente fuera de orden, ADR 0019), montos exactos en `Decimal(18,2)` y reviews que llegan antes que su pedido esperando con un plazo de gracia (ADR 0020). Todo se valida con Pandera y chequeos de FK antes de escribir: ante cualquier violación, una sola `SilverValidationError` con todas las fallas y **nada escrito** (ADR 0023).
 - 🔜 **Gold** (Fase 4): star schema (`fct_pedidos`, `fct_pagos`, `dim_*`) construido con dbt sobre DuckDB, con las reglas de calidad como tests de dbt.
 - 🔜 **Orquestación** (Fase 5): DAGs de Airflow que envuelven las funciones de cada capa, con reintentos y manejo de fallos.
 
@@ -53,6 +54,7 @@ Decisiones deliberadas de alcance, no limitaciones por descuido:
 
 - No procesa en streaming: la granularidad es un lote diario, que es lo que el caso de uso necesita.
 - No corrige datos en Bronze: Bronze es la copia fiel de la fuente; limpiar y tipar es trabajo de Silver (ADR 0011).
+- No actualiza Silver con merges incrementales: lo reconstruye completo a la fecha D, sin estado entre corridas (ADR 0017). El patrón incremental se aplica en Gold, con dbt.
 - No sigue adelante "con warnings": una violación estructural detiene el pipeline (ADR 0001, 0003).
 - No usa Delta Lake ni Iceberg: Parquet plano, con la idempotencia y la atomicidad garantizadas por el propio pipeline (ADR 0006, 0012, 0015).
 - No versiona datos con DVC: la fuente es estática y cada capa se regenera con un replay (ADR 0010).
@@ -65,9 +67,9 @@ data/raw/*.csv  (Olist, inmutable)
    │  bronze-replay / Airflow → ingest_day(dia_simulado)     [Polars]
    ▼
 data/bronze/<tabla>/dia_simulado=AAAA-MM-DD/part-0.parquet   (+ linaje)
-   │  Airflow → silver_build                                  [Polars + Pandera, fail-fast]
+   │  silver-build / Airflow → silver_build(D)               [Polars + Pandera, fail-fast]
    ▼
-data/silver/<tabla>/*.parquet
+data/silver/<tabla>/part-0.parquet   (+ _manifest.json de la corrida)
    │  Airflow → dbt build                                     [dbt-duckdb, tests = fail-fast]
    ▼
 data/gold/warehouse.duckdb  (star schema: dim_* / fct_*)
@@ -99,14 +101,14 @@ La lógica de cada capa vive en funciones Python puras (paquete `medallion`) o e
 ```text
 ecommerce-medallion-pipeline/
 ├── src/medallion/
-│   ├── common/            # configuración externalizada (config/pipeline.yaml)
-│   ├── bronze/            # ruteo por día, linaje, batch_hash, escritura atómica, replay
-│   ├── silver/            # validación y limpieza (Fase 3)
+│   ├── common/            # configuración externalizada, escritura atómica
+│   ├── bronze/            # ruteo por día, linaje, batch_hash, replay
+│   ├── silver/            # tipos, SCD2, enmascarado a la fecha D, Pandera, silver-build
 │   └── gold/              # (Fase 4)
 ├── tests/
 │   ├── unit/              # espejo de las capas de src/medallion/
-│   └── integration/       # flujos completos (CSV en disco → Bronze)
-├── config/                # pipeline.yaml: raíz de almacenamiento y archivos fuente
+│   └── integration/       # flujos completos (CSV → Bronze → Silver) y propiedades por día
+├── config/                # pipeline.yaml: almacenamiento, archivos fuente, plazo de gracia
 ├── dags/                  # DAGs de Airflow (Fase 5)
 ├── data/                  # raw/ bronze/ silver/ gold/ — fuera de git
 ├── notebooks/             # solo exploración (no forma parte del pipeline)
@@ -128,8 +130,8 @@ ecommerce-medallion-pipeline/
 | 0. Fundamentos y entorno de trabajo            | ✅ Completado  |
 | 1. Diseño de datos y contratos                 | ✅ Completado  |
 | 2. Capa Bronze: ingesta y llegada incremental  | ✅ Completado  |
-| 3. Validación y capa Silver                    | 🔜 Siguiente   |
-| 4. Capa Gold: modelado dimensional (dbt)       | ⏳ Pendiente   |
+| 3. Validación y capa Silver                    | ✅ Completado  |
+| 4. Capa Gold: modelado dimensional (dbt)       | 🔜 Siguiente   |
 | 5. Orquestación con Airflow                    | ⏳ Pendiente   |
 | 6. Testing automatizado                        | ⏳ Pendiente   |
 | 7. Contenerización y reproducibilidad          | ⏳ Pendiente   |
@@ -181,6 +183,35 @@ orders = pl.read_parquet("data/bronze/orders", hive_partitioning=True)
 
 **Bronze en números** (replay completo verificado contra la fuente): 774 días, 308,454 filas de `orders` (una por pedido y día con eventos), 112,650 de `order_items`, 103,886 de `order_payments`, 99,224 de `order_reviews` y 5 snapshots de referencia; 67.7 MB en Parquet frente a ~126 MB de CSV.
 
+### Construir Silver
+
+Con Bronze ya ingerido:
+
+```bash
+# Silver tal como se conocía al cierre de un día (el último del dataset, ~2 s)
+uv run silver-build --dia 2018-10-17
+
+# cualquier día intermedio: los eventos posteriores a esa fecha quedan ocultos
+uv run silver-build --dia 2018-06-11 --config ruta/a/pipeline.yaml
+```
+
+Imprime las filas por tabla y las reviews que esperan a su pedido. Si algún dato viola el contrato, no escribe nada, termina con código 1 y lista todas las fallas:
+
+```text
+Silver no pasó la validación: 1 fallas; no se escribió nada.
+- order_payments [payment_installments] medida_imposible: 1 filas (ej.: '-1')
+```
+
+Cada corrida deja `data/silver/_manifest.json` (fecha D, filas por tabla, días de Bronze leídos); si falta, Silver quedó incompleto y no se debe leer. Silver se lee directamente con Polars o DuckDB:
+
+```python
+import duckdb
+
+duckdb.sql("select sum(payment_value) from 'data/silver/order_payments/part-0.parquet'")
+```
+
+**Silver en números** (último día, verificado contra la fuente): 99,441 pedidos, 392,856 eventos de estado en el SCD2, 112,650 items, 103,886 pagos, 99,224 reviews y 5 tablas de referencia; 31 MB, 0 fallas de validación, y reconstruir el mismo día da archivos idénticos byte a byte. Contratos completos en [`docs/schemas.md`](docs/schemas.md), secciones 3 a 5.
+
 ### Tests y calidad de código
 
 ```bash
@@ -213,6 +244,11 @@ El roadmap son las 9 fases de la tabla de "Estado del proyecto", detalladas en [
 - **0012 y 0015:** reprocesar un día reemplaza su partición completa, con escritura atómica por archivo.
 - **0014:** `batch_hash` con una serialización canónica sin ambigüedades (prefijo de longitud).
 - **0016:** el código se instala como paquete (`medallion`), sin trucos de `PYTHONPATH`.
+- **0017 y 0018:** Silver se reconstruye completo "a la fecha D" y oculta lo que todavía no ocurrió (sin *data leakage*).
+- **0019:** SCD2 ordenado por etapa, con `valid_from` que nunca retrocede aunque la fuente traiga horas fuera de orden (1.4% de los pedidos).
+- **0020:** reviews que llegan antes que su pedido esperan hasta 120 días; después, son huérfanas y detienen el pipeline.
+- **0021:** el contrato de Silver se corrigió con datos medidos (reviews muchos a muchos, cuotas en 0, códigos postales con ceros a la izquierda).
+- **0022:** montos en `Decimal(18,2)`, con un chequeo de formato que evita el truncado silencioso.
 
 Las convenciones de trabajo del repositorio (git, calidad de código, ADRs) están en [`CLAUDE.md`](CLAUDE.md). La exploración inicial del dataset está en [`notebooks/01_exploracion_olist.ipynb`](notebooks/01_exploracion_olist.ipynb).
 

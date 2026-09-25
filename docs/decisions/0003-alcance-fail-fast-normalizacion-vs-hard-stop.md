@@ -1,6 +1,8 @@
 # 0003 — Alcance del fail-fast: violaciones estructurales vs. normalización de catálogo
 
-**Estado:** Aceptada
+**Estado:** Aceptada — parcialmente superada por
+[0021](0021-ajustes-contrato-silver-datos-medidos.md) en el ejemplo de
+deduplicación de reviews (el alcance del fail-fast sigue vigente)
 **Fecha:** 2026-08-19
 
 ## Contexto

@@ -25,6 +25,14 @@ Ambos son la fuente de verdad — léelos antes de retomar trabajo en este repo.
 
 - Gestión de paquetes y entorno con `uv`.
 - Versión de Python fijada en `.python-version`.
+- El código se instala como paquete `medallion` (ADR 0016). Comandos del
+  pipeline: `uv run bronze-replay` (ingesta de Bronze por rango de días) y
+  `uv run silver-build --dia AAAA-MM-DD` (Silver a la fecha D).
+- Configuración en `config/pipeline.yaml`. Todo parámetro del pipeline es
+  obligatorio en el YAML y **sin valor por defecto en el código** (p. ej.
+  `silver.early_arriving_grace_days`). Los hechos fijos, como los extremos
+  geográficos de Brasil (ADR 0025), son constantes en el código, no
+  configuración.
 
 ## Calidad de código
 
@@ -50,7 +58,12 @@ Ambos son la fuente de verdad — léelos antes de retomar trabajo en este repo.
 - `tests/unit/`: espejo de la estructura de `src/`, una carpeta por
   responsabilidad (bronze, silver, gold, common, etc.).
 - `tests/integration/`: pruebas que cruzan capas o validan el pipeline
-  end-to-end.
+  end-to-end. `tests/integration/conftest.py` tiene un Olist en miniatura
+  con todas las columnas del contrato y dos fixtures: `silver_env` (Bronze
+  propio por test, para tests que modifican datos o escriben Silver) y
+  `shared_bronze` (uno por módulo, **solo** para tests de lectura).
+- Las propiedades del criterio de "hecho" de cada fase se prueban (p. ej.
+  recorriendo cada día del rango), no se asumen.
 
 ## Versionamiento de datos
 

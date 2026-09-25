@@ -13,9 +13,9 @@ import pytest
 
 from medallion.bronze.ingest import ingest_day, load_sources
 from medallion.bronze.replay import main
-from medallion.bronze.storage import STAGING_DIR
 from medallion.bronze.tables import EVENT_TABLES, REFERENCE_TABLES
 from medallion.common.config import PipelineConfig
+from medallion.common.storage import STAGING_DIR
 
 DAYS = (date(2017, 3, 15), date(2017, 3, 16), date(2017, 3, 17))
 
@@ -48,7 +48,11 @@ def _setup(root: Path) -> PipelineConfig:
     raw.mkdir()
     for table, content in CSV_FILES.items():
         (raw / f"{table}.csv").write_bytes(content.encode("utf-8"))
-    return PipelineConfig(storage_root=str(root), sources={t: f"{t}.csv" for t in CSV_FILES})
+    return PipelineConfig(
+        storage_root=str(root),
+        sources={t: f"{t}.csv" for t in CSV_FILES},
+        early_arriving_grace_days=120,
+    )
 
 
 def _bronze_state(bronze: Path) -> dict[str, pl.DataFrame]:
@@ -111,7 +115,9 @@ def test_command_line_replays_the_whole_source_range(
     config_file = tmp_path / "pipeline.yaml"
     sources_yaml = "".join(f"  {t}: {f}\n" for t, f in config.sources.items())
     config_file.write_text(
-        f"storage:\n  root: {tmp_path.as_posix()}\nsources:\n{sources_yaml}", encoding="utf-8"
+        f"storage:\n  root: {tmp_path.as_posix()}\nsources:\n{sources_yaml}"
+        f"silver:\n  early_arriving_grace_days: {config.early_arriving_grace_days}\n",
+        encoding="utf-8",
     )
 
     assert main(["--config", str(config_file)]) == 0

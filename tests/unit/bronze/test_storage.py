@@ -5,8 +5,6 @@ import polars as pl
 import pytest
 
 from medallion.bronze.storage import (
-    STAGING_DIR,
-    StorageError,
     partition_path,
     read_source,
     snapshot_batch_hash,
@@ -14,6 +12,7 @@ from medallion.bronze.storage import (
     write_partition,
     write_snapshot,
 )
+from medallion.common.storage import STAGING_DIR, StorageError
 
 DIA = date(2017, 3, 15)
 
