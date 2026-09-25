@@ -113,7 +113,8 @@ reviews que llegan antes que su pedido esperan hasta 120 días (0020); el
 contrato se ajustó con datos medidos (0021: PK de reviews, cuotas `>= 0`,
 códigos postales como texto); montos en `Decimal(18,2)` (0022); todas las
 fallas en una `SilverValidationError` (0023); un archivo por tabla con
-manifiesto al final (0024). Contratos completos en `docs/schemas.md`,
+manifiesto al final (0024); coordenadas fuera de Brasil descartadas antes
+de promediar (0025). Contratos completos en `docs/schemas.md`,
 secciones 3 a 5.
 
 **Criterio de "hecho":** propiedades probadas, no asumidas:
@@ -283,3 +284,4 @@ Cada decisión de diseño no trivial vive como archivo independiente en
 | [0022](0022-montos-decimal.md) | Montos como `Decimal(18,2)` | Aceptada |
 | [0023](0023-silver-validacion-excepcion-reporte.md) | Validación de Silver: todas las fallas en una `SilverValidationError` | Aceptada |
 | [0024](0024-silver-escritura-manifiesto.md) | Escritura de Silver: un archivo por tabla y un manifiesto | Aceptada |
+| [0025](0025-geolocalizacion-descartar-coordenadas-fuera-de-brasil.md) | Geolocalización: descartar coordenadas fuera de Brasil | Aceptada |

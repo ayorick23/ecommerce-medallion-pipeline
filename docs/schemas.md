@@ -5,7 +5,7 @@
 > Decisiones de arquitectura no triviales referenciadas están en
 > `docs/decisions/` (ADRs 0001-0004; stack y almacenamiento en 0005-0009;
 > implementación física de Bronze en 0010-0015; diseño de Silver en
-> 0017-0024).
+> 0017-0025).
 
 ## Convenciones generales
 
@@ -323,18 +323,15 @@ Los nulos en las medidas son huecos de catálogo, no disparan fail-fast: los
 Agregación de `bronze_geolocation` por `geolocation_zip_code_prefix`
 (promedio de `lat`/`lng`) — la fuente no es 1:1 por código postal (1,000,163
 filas para 19,015 códigos), así que no es utilizable como dimensión sin
-agregar antes. **PK:** `geolocation_zip_code_prefix`. **Filas:** 19,015.
-Columnas: `geolocation_zip_code_prefix` (String), `geolocation_lat` y
-`geolocation_lng` (Float64).
+agregar antes. Antes de promediar se descartan las filas con coordenadas
+fuera de Brasil (ADR 0025): 42 filas en 21 códigos, y 5 códigos se quedan
+sin ninguna fila válida. **PK:** `geolocation_zip_code_prefix`.
+**Filas:** 19,010. Columnas: `geolocation_zip_code_prefix` (String),
+`geolocation_lat` y `geolocation_lng` (Float64, ninguna nullable).
 
 No es FK de clientes ni vendedores: 278 clientes y 7 vendedores tienen un
 código postal sin geolocalización, y eso no es un error (es una tabla de
-consulta).
-
-**Pendiente de decisión (2026-09-25):** 42 filas de la fuente, en 21
-códigos postales, tienen coordenadas fuera de Brasil. El promedio de 12 de
-esos códigos cae fuera del país. Hay que decidir si se filtran antes de
-promediar.
+consulta). Los 5 códigos descartados se suman a ese mismo caso.
 
 ### `silver_category_translation`
 
@@ -424,6 +421,8 @@ Todas las fallas de una corrida se reportan juntas en una sola
 - Review cuyo pedido todavía no llegó, dentro del plazo de gracia →
   pendiente (ADR 0020).
 - Medidas nulas en `products` (huecos de catálogo, sección 3).
+- Coordenadas de geolocalización fuera de Brasil → se descartan antes de
+  promediar (ADR 0025).
 
 ### Silver → Gold (dispara fail-fast)
 
