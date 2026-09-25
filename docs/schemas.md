@@ -374,6 +374,20 @@ Bronze leídos, filas por tabla y cantidad de reviews pendientes.
 en `config/pipeline.yaml` (120 días); en el último día del replay el
 archivo debe estar vacío.
 
+**Corrida real verificada (2026-09-25):** `uv run silver-build --dia
+2018-10-17` sobre el Bronze completo tarda ~1.8 s y escribe 31 MB. Leyó 710
+días de Bronze (los días con alguna partición, incluidos los que solo
+tienen reviews). Todas las tablas coinciden con la fuente: 99,441 pedidos,
+392,856 eventos de estado, 112,650 items, 103,886 pagos, 99,224 reviews,
+99,441 clientes, 32,951 productos, 3,095 vendedores, 19,010 códigos
+postales y 71 categorías, con 0 reviews pendientes y 0 fallas de
+validación. Reconstruir el mismo día, aun con otro día construido en el
+medio, deja los 11 Parquet idénticos byte a byte. DuckDB los lee con los
+tipos del contrato (`DECIMAL(18,2)`, `TIMESTAMP`, `BOOLEAN`), y la suma de
+pagos da 16,008,872.12 exacto. En días intermedios, 0 eventos posteriores
+a D; el 2018-08-04, por ejemplo, hay 21 reviews pendientes (la más antigua,
+con 91 días).
+
 ---
 
 ## 4. Reglas de calidad no negociables (fail-fast) por transición

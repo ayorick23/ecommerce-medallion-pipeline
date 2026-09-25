@@ -17,7 +17,14 @@ from medallion.silver.build import (
 )
 from medallion.silver.schemas import SCHEMAS
 from medallion.silver.validation import SilverValidationError
-from tests.integration.conftest import FIRST_DAY, LAST_DAY, SILVER_CSV, SilverEnv, write_sources
+from tests.integration.conftest import (
+    BRONZE_DAYS_WITH_DATA,
+    FIRST_DAY,
+    LAST_DAY,
+    SILVER_CSV,
+    SilverEnv,
+    write_sources,
+)
 
 BUILT_AT = datetime(2026, 9, 25, 15, 4, 11, tzinfo=UTC)
 
@@ -39,14 +46,18 @@ def test_build_writes_every_table_the_pending_file_and_the_manifest(silver_env: 
     assert manifest == {
         "as_of": "2017-03-19",
         "built_at": "2026-09-25T15:04:11+00:00",
-        "bronze_days": {"first": str(FIRST_DAY), "last": str(LAST_DAY), "count": 6},
+        "bronze_days": {
+            "first": str(FIRST_DAY),
+            "last": str(LAST_DAY),
+            "count": BRONZE_DAYS_WITH_DATA,
+        },
         "row_counts": {
-            "orders": 2,
-            "order_status_history": 6,
+            "orders": 3,
+            "order_status_history": 10,
             "order_items": 3,
             "order_payments": 2,
             "order_reviews": 2,
-            "customers": 2,
+            "customers": 3,
             "products": 2,
             "sellers": 1,
             "geolocation_agg": 2,
@@ -94,7 +105,7 @@ def test_an_interrupted_write_leaves_silver_without_manifest(
 ) -> None:
     silver_build(LAST_DAY, silver_env.config, BUILT_AT)
 
-    def disk_full(self: pl.DataFrame, file: Path) -> None:
+    def disk_full(_self: pl.DataFrame, _file: Path) -> None:
         raise OSError("disco lleno")
 
     monkeypatch.setattr(pl.DataFrame, "write_parquet", disk_full)
@@ -111,7 +122,7 @@ def test_command_line_builds_silver(
     assert main(["--dia", str(LAST_DAY), "--config", str(silver_env.config_file)]) == 0
 
     output = capsys.readouterr().out
-    assert "order_status_history           6" in output
+    assert "order_status_history          10" in output
     assert "Silver(2017-03-19) escrito" in output
     assert read_manifest(str(silver_env.silver)) is not None
 

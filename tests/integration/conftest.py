@@ -1,9 +1,10 @@
 """Dataset Olist en miniatura, con todas las columnas del contrato, para los tests de Silver.
 
 Cubre los casos que Silver tiene que resolver: un pedido entregado (``o1``), un
-pedido cancelado después de aprobarse (``o2``), una review creada 5 días antes
-de la compra de su pedido (``r2``, ADR 0020), un producto sin categoría y una
-coordenada fuera de Brasil (ADR 0025).
+pedido cancelado después de aprobarse (``o2``), un pedido despachado antes de
+aprobarse y sin items ni pagos (``o3``, ADR 0019), una review creada 5 días
+antes de la compra de su pedido (``r2``, ADR 0020), un producto sin categoría y
+una coordenada fuera de Brasil (ADR 0025).
 """
 
 from collections.abc import Callable
@@ -27,6 +28,8 @@ SILVER_CSV = {
         "o1,c1,delivered,2017-03-15 10:00:00,2017-03-15 11:00:00,2017-03-16 08:00:00,"
         "2017-03-18 18:00:00,2017-03-30 00:00:00\n"
         "o2,c2,canceled,2017-03-17 09:00:00,2017-03-17 09:30:00,,,2017-03-31 00:00:00\n"
+        "o3,c3,delivered,2017-03-14 08:00:00,2017-03-15 12:00:00,2017-03-15 09:00:00,"
+        "2017-03-18 10:00:00,2017-03-28 00:00:00\n"
     ),
     "order_items": (
         "order_id,order_item_id,product_id,seller_id,shipping_limit_date,price,freight_value\n"
@@ -49,6 +52,7 @@ SILVER_CSV = {
         "customer_id,customer_unique_id,customer_zip_code_prefix,customer_city,customer_state\n"
         "c1,u1,01151,sao paulo,SP\n"
         "c2,u2,77410,gurupi,TO\n"
+        "c3,u1,01151,sao paulo,SP\n"
     ),
     "products": (
         "product_id,product_category_name,product_name_lenght,product_description_lenght,"
@@ -70,8 +74,10 @@ SILVER_CSV = {
     ),
 }
 
-# Días con eventos en Bronze: r2 (12/03), o1 (15, 16 y 18/03), o2 (17/03), r1 (19/03).
+# Días con eventos en Bronze: r2 (12/03), o3 (14, 15 y 18/03), o1 (15, 16 y 18/03),
+# o2 (17/03), r1 (19/03). La respuesta de r1 (20/03) no es ancla: no crea partición.
 FIRST_DAY, LAST_DAY = date(2017, 3, 12), date(2017, 3, 19)
+BRONZE_DAYS_WITH_DATA = 7
 
 
 @dataclass(frozen=True)
@@ -95,19 +101,17 @@ def write_sources(root: Path, overrides: dict[str, str] | None = None) -> None:
         (raw / f"{table}.csv").write_bytes(content.encode("utf-8"))
 
 
-@pytest.fixture
-def silver_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SilverEnv:
-    monkeypatch.delenv("PIPELINE_STORAGE_ROOT", raising=False)
-    write_sources(tmp_path)
+def _make_env(root: Path) -> SilverEnv:
+    write_sources(root)
     config = PipelineConfig(
-        storage_root=str(tmp_path),
+        storage_root=str(root),
         sources={table: f"{table}.csv" for table in SILVER_CSV},
         early_arriving_grace_days=GRACE_DAYS,
     )
-    config_file = tmp_path / "pipeline.yaml"
+    config_file = root / "pipeline.yaml"
     sources_yaml = "".join(f"  {t}: {f}\n" for t, f in config.sources.items())
     config_file.write_text(
-        f"storage:\n  root: {tmp_path.as_posix()}\nsources:\n{sources_yaml}"
+        f"storage:\n  root: {root.as_posix()}\nsources:\n{sources_yaml}"
         f"silver:\n  early_arriving_grace_days: {GRACE_DAYS}\n",
         encoding="utf-8",
     )
@@ -121,4 +125,17 @@ def silver_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SilverEnv:
             pass
 
     ingest()
-    return SilverEnv(tmp_path, config, config_file, ingest)
+    return SilverEnv(root, config, config_file, ingest)
+
+
+@pytest.fixture
+def silver_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SilverEnv:
+    """Bronze ingerido en un directorio propio del test: se puede modificar y escribir."""
+    monkeypatch.delenv("PIPELINE_STORAGE_ROOT", raising=False)
+    return _make_env(tmp_path)
+
+
+@pytest.fixture(scope="module")
+def shared_bronze(tmp_path_factory: pytest.TempPathFactory) -> SilverEnv:
+    """Bronze ingerido una vez por módulo. Solo para tests que **no** escriben nada."""
+    return _make_env(tmp_path_factory.mktemp("bronze-compartido"))
