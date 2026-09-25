@@ -30,7 +30,7 @@ def local_path(uri: str) -> Path:
     return Path(uri)
 
 
-def atomic_write(target: Path, layer_uri: str, write: Callable[[Path], None]) -> None:
+def atomic_write(target: Path, layer_uri: str, write: Callable[[Path], object]) -> None:
     """Escribe ``target`` de forma atómica.
 
     ``write`` recibe una ruta temporal dentro de ``<layer_uri>/_staging/`` y
