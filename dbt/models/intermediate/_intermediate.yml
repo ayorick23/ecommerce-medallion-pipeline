@@ -1,0 +1,203 @@
+models:
+  - name: int_cliente_direcciones
+    description: >
+      Una fila por customer_id (uno por pedido) con la versión de dirección de
+      la persona a la que pertenece (ADR 0030). Base de dim_cliente y de la
+      resolución de cliente_sk en los hechos.
+    columns:
+      - name: customer_id
+        data_tests: [unique, not_null]
+      - name: cliente_sk
+        data_tests: [not_null]
+      - name: valid_from
+        data_tests: [not_null]
+
+  - name: int_pedido_estado
+    description: >
+      Estado combinado de cada pedido a la fecha D (ADR 0031) e instante de su
+      último evento visible, que es la marca de agua de fct_pedidos (ADR 0029).
+    columns:
+      - name: order_id
+        data_tests: [unique, not_null]
+      - name: estado
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [creado, aprobado, despachado, entregado, cancelado, no_disponible]
+      - name: ultimo_evento_at
+        data_tests: [not_null]
+
+unit_tests:
+  # --- int_cliente_direcciones (ADR 0030) -----------------------------------
+
+  - name: cliente_varias_compras_misma_direccion_es_una_version
+    model: int_cliente_direcciones
+    given:
+      - input: ref('stg_orders')
+        rows:
+          - {customer_id: c1, order_purchase_timestamp: "2017-01-10 10:00:00"}
+          - {customer_id: c2, order_purchase_timestamp: "2017-03-05 09:00:00"}
+      - input: ref('stg_customers')
+        rows:
+          - {customer_id: c1, customer_unique_id: p1, customer_zip_code_prefix: "01001", customer_city: sao paulo, customer_state: SP}
+          - {customer_id: c2, customer_unique_id: p1, customer_zip_code_prefix: "01001", customer_city: sao paulo, customer_state: SP}
+    expect:
+      rows:
+        - {customer_id: c1, numero_version: 1, valid_from: "2017-01-10 10:00:00"}
+        - {customer_id: c2, numero_version: 1, valid_from: "2017-01-10 10:00:00"}
+
+  - name: cliente_cambio_solo_de_codigo_postal_abre_version
+    model: int_cliente_direcciones
+    given:
+      - input: ref('stg_orders')
+        rows:
+          - {customer_id: c1, order_purchase_timestamp: "2017-01-10 10:00:00"}
+          - {customer_id: c2, order_purchase_timestamp: "2017-03-05 09:00:00"}
+      - input: ref('stg_customers')
+        rows:
+          - {customer_id: c1, customer_unique_id: p1, customer_zip_code_prefix: "01001", customer_city: sao paulo, customer_state: SP}
+          - {customer_id: c2, customer_unique_id: p1, customer_zip_code_prefix: "01002", customer_city: sao paulo, customer_state: SP}
+    expect:
+      rows:
+        - {customer_id: c1, numero_version: 1, valid_from: "2017-01-10 10:00:00"}
+        - {customer_id: c2, numero_version: 2, valid_from: "2017-03-05 09:00:00"}
+
+  - name: cliente_cambio_de_estado_abre_version
+    model: int_cliente_direcciones
+    given:
+      - input: ref('stg_orders')
+        rows:
+          - {customer_id: c1, order_purchase_timestamp: "2017-01-10 10:00:00"}
+          - {customer_id: c2, order_purchase_timestamp: "2017-03-05 09:00:00"}
+      - input: ref('stg_customers')
+        rows:
+          - {customer_id: c1, customer_unique_id: p1, customer_zip_code_prefix: "01001", customer_city: sao paulo, customer_state: SP}
+          - {customer_id: c2, customer_unique_id: p1, customer_zip_code_prefix: "20010", customer_city: rio de janeiro, customer_state: RJ}
+    expect:
+      rows:
+        - {customer_id: c1, numero_version: 1, valid_from: "2017-01-10 10:00:00"}
+        - {customer_id: c2, numero_version: 2, valid_from: "2017-03-05 09:00:00"}
+
+  - name: cliente_vuelta_a_direccion_anterior_es_version_nueva
+    model: int_cliente_direcciones
+    given:
+      - input: ref('stg_orders')
+        rows:
+          - {customer_id: c1, order_purchase_timestamp: "2017-01-10 10:00:00"}
+          - {customer_id: c2, order_purchase_timestamp: "2017-03-05 09:00:00"}
+          - {customer_id: c3, order_purchase_timestamp: "2017-06-20 18:30:00"}
+      - input: ref('stg_customers')
+        rows:
+          - {customer_id: c1, customer_unique_id: p1, customer_zip_code_prefix: "01001", customer_city: sao paulo, customer_state: SP}
+          - {customer_id: c2, customer_unique_id: p1, customer_zip_code_prefix: "20010", customer_city: rio de janeiro, customer_state: RJ}
+          - {customer_id: c3, customer_unique_id: p1, customer_zip_code_prefix: "01001", customer_city: sao paulo, customer_state: SP}
+    expect:
+      rows:
+        - {customer_id: c1, numero_version: 1, valid_from: "2017-01-10 10:00:00"}
+        - {customer_id: c2, numero_version: 2, valid_from: "2017-03-05 09:00:00"}
+        - {customer_id: c3, numero_version: 3, valid_from: "2017-06-20 18:30:00"}
+
+  - name: cliente_sin_pedido_visible_no_aparece
+    description: customers es una referencia sin enmascarar; solo cuentan los pedidos de Silver(D).
+    model: int_cliente_direcciones
+    given:
+      - input: ref('stg_orders')
+        rows:
+          - {customer_id: c1, order_purchase_timestamp: "2017-01-10 10:00:00"}
+      - input: ref('stg_customers')
+        rows:
+          - {customer_id: c1, customer_unique_id: p1, customer_zip_code_prefix: "01001", customer_city: sao paulo, customer_state: SP}
+          - {customer_id: c2, customer_unique_id: p1, customer_zip_code_prefix: "20010", customer_city: rio de janeiro, customer_state: RJ}
+    expect:
+      rows:
+        - {customer_id: c1, numero_version: 1}
+
+  # --- int_pedido_estado (ADR 0031) -----------------------------------------
+
+  - name: estado_progresion_normal_sale_del_scd2
+    model: int_pedido_estado
+    given:
+      - input: ref('stg_orders')
+        rows:
+          - {order_id: o1, order_status: delivered}
+      - input: ref('stg_order_status_history')
+        rows:
+          - {order_id: o1, status_event: creado, valid_from: "2017-01-10 10:00:00", is_current: false}
+          - {order_id: o1, status_event: aprobado, valid_from: "2017-01-10 11:00:00", is_current: false}
+          - {order_id: o1, status_event: despachado, valid_from: "2017-01-12 08:00:00", is_current: true}
+    expect:
+      rows:
+        - {order_id: o1, estado: despachado, ultimo_evento_at: "2017-01-12 08:00:00"}
+
+  - name: estado_cancelado_antes_de_aprobarse
+    model: int_pedido_estado
+    given:
+      - input: ref('stg_orders')
+        rows:
+          - {order_id: o1, order_status: canceled}
+      - input: ref('stg_order_status_history')
+        rows:
+          - {order_id: o1, status_event: creado, valid_from: "2017-01-10 10:00:00", is_current: true}
+    expect:
+      rows:
+        - {order_id: o1, estado: cancelado, ultimo_evento_at: "2017-01-10 10:00:00"}
+
+  - name: estado_cancelado_despues_de_entregado_gana_la_cancelacion
+    model: int_pedido_estado
+    given:
+      - input: ref('stg_orders')
+        rows:
+          - {order_id: o1, order_status: canceled}
+      - input: ref('stg_order_status_history')
+        rows:
+          - {order_id: o1, status_event: creado, valid_from: "2017-01-10 10:00:00", is_current: false}
+          - {order_id: o1, status_event: entregado, valid_from: "2017-01-20 15:00:00", is_current: true}
+    expect:
+      rows:
+        - {order_id: o1, estado: cancelado, ultimo_evento_at: "2017-01-20 15:00:00"}
+
+  - name: estado_unavailable_es_no_disponible
+    model: int_pedido_estado
+    given:
+      - input: ref('stg_orders')
+        rows:
+          - {order_id: o1, order_status: unavailable}
+      - input: ref('stg_order_status_history')
+        rows:
+          - {order_id: o1, status_event: aprobado, valid_from: "2017-01-10 11:00:00", is_current: true}
+    expect:
+      rows:
+        - {order_id: o1, estado: no_disponible}
+
+  - name: estado_invoiced_y_processing_se_absorben_en_la_progresion
+    model: int_pedido_estado
+    given:
+      - input: ref('stg_orders')
+        rows:
+          - {order_id: o_invoiced, order_status: invoiced}
+          - {order_id: o_processing, order_status: processing}
+      - input: ref('stg_order_status_history')
+        rows:
+          - {order_id: o_invoiced, status_event: aprobado, valid_from: "2017-01-10 11:00:00", is_current: true}
+          - {order_id: o_processing, status_event: aprobado, valid_from: "2017-01-11 09:00:00", is_current: true}
+    expect:
+      rows:
+        - {order_id: o_invoiced, estado: aprobado}
+        - {order_id: o_processing, estado: aprobado}
+
+  - name: estado_entregado_a_la_fecha_d_aunque_la_fuente_diga_delivered
+    description: >
+      Con D anterior a la entrega, order_status ya dice delivered (estado final),
+      pero el estado a D es el del SCD2 enmascarado (ADR 0018).
+    model: int_pedido_estado
+    given:
+      - input: ref('stg_orders')
+        rows:
+          - {order_id: o1, order_status: delivered}
+      - input: ref('stg_order_status_history')
+        rows:
+          - {order_id: o1, status_event: creado, valid_from: "2017-01-10 10:00:00", is_current: true}
+    expect:
+      rows:
+        - {order_id: o1, estado: creado}

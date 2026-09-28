@@ -30,8 +30,14 @@ jobs:
       - name: Format check (ruff)
         run: uv run ruff format --check .
 
+      - name: Format check (sqlfmt, SQL de dbt)
+        run: uv run sqlfmt --check dbt
+
       - name: Type-check (mypy)
         run: uv run mypy src tests
+
+      - name: Paquetes de dbt (dbt deps)
+        run: uv run gold-dbt deps
 
       - name: Tests (pytest)
         run: uv run pytest

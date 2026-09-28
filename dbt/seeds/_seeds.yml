@@ -1,0 +1,31 @@
+seeds:
+  - name: estados_pedido
+    description: Los 6 estados de dim_estado_pedido (ADR 0031).
+    config:
+      column_types:
+        estado: varchar
+        descripcion: varchar
+        categoria: varchar
+        es_terminal: boolean
+        orden: bigint
+    columns:
+      - name: estado
+        data_tests: [unique, not_null]
+
+  - name: feriados_brasil
+    description: >
+      Feriados nacionales de Brasil 2016-2020 (ADR 0032), generados con
+      `uv run python -m medallion.gold.feriados`; no se editan a mano.
+    config:
+      column_types:
+        fecha: date
+        nombre_feriado: varchar
+    columns:
+      - name: fecha
+        data_tests:
+          - unique
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_tiempo')
+                field: fecha

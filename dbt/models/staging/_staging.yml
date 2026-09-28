@@ -1,0 +1,15 @@
+models:
+  - name: stg_orders
+    description: >
+      Una vista por tabla de Silver, sin lógica de negocio (ADR 0026). Silver ya
+      trae los tipos del contrato, así que staging solo fija las columnas: si
+      Silver cambia un tipo, lo detecta el contrato de los marts en lugar de un
+      cast silencioso.
+  - name: stg_order_status_history
+  - name: stg_order_items
+  - name: stg_order_payments
+  - name: stg_order_reviews
+  - name: stg_customers
+  - name: stg_products
+  - name: stg_sellers
+  - name: stg_geolocation

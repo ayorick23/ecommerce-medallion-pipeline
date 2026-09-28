@@ -683,9 +683,9 @@ PK (ADR 0029). **Filas:** 112,650 en el último día.
 
 Las fechas y medidas de proceso son del **pedido** y se repiten en cada
 línea: los KPIs por pedido se calculan sobre pedidos distintos
-(`COUNT(DISTINCT order_id)` o agregando primero por pedido). Medido en el
-diseño, por pedido entregado: 12.5 días promedio hasta la entrega y 8.1%
-de entregas tardías. Un pedido cancelado figura `cancelado` desde su
+(`COUNT(DISTINCT order_id)` o agregando primero por pedido). Por pedido
+entregado: 12.56 días promedio hasta la entrega y 8.1% de entregas tardías;
+promediando fila por fila daría 12.47. Un pedido cancelado figura `cancelado` desde su
 compra (fuga aceptada, ADR 0018).
 
 **`fct_pagos`** — grano: `(order_id, payment_sequential)`. Incremental en
