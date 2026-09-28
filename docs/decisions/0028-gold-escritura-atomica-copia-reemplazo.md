@@ -26,10 +26,10 @@ DuckDB) no van a leer un JSON antes de consultar.
 1. **Guardas**, antes de tocar nada: manifiesto de Silver válido para D
    (ADR 0027), ruta de Gold local, y la guarda contra ir hacia atrás (más
    abajo).
-2. **Copia:** `warehouse.duckdb` se copia a un temporal en
-   `gold/_staging/`. Si no existe todavía, o si se pasó `--full-refresh`,
-   el temporal parte vacío (así un full refresh no arrastra tablas de
-   modelos que ya no existen).
+2. **Copia:** `warehouse.duckdb` se copia a
+   `gold/_staging/build/warehouse.duckdb`. Si no existe todavía, o si se
+   pasó `--full-refresh`, el temporal parte vacío (así un full refresh no
+   arrastra tablas de modelos que ya no existen).
 3. **Construcción:** `MEDALLION_GOLD_DB` apunta al temporal y se corre
    `dbt build` contra él (con `--full-refresh` si corresponde).
 4. **Metadatos:** con una conexión de DuckDB, se escribe la tabla
@@ -39,9 +39,15 @@ DuckDB) no van a leer un JSON antes de consultar.
    todo quede en el archivo y no en un `.wal` aparte.
 5. **Publicación:** `os.replace` del temporal sobre `warehouse.duckdb`.
 
-Si cualquier paso falla, se borra el temporal y `warehouse.duckdb` queda
-exactamente como estaba. Se reusa `atomic_write` de `medallion.common`
-(el mismo mecanismo de staging + `os.replace` de las ADRs 0015 y 0024).
+Si cualquier paso falla, se borra la carpeta `_staging/build/` y
+`warehouse.duckdb` queda exactamente como estaba. Es el mismo mecanismo de
+staging + `os.replace` de las ADRs 0015 y 0024, con una diferencia: **el
+temporal se llama igual que el archivo publicado**. DuckDB nombra el
+catálogo según el nombre del archivo, y dbt escribe ese catálogo en las
+vistas de staging e intermediate (`"warehouse".staging.stg_orders`). Con
+un temporal de otro nombre, como el `<uuid>-warehouse.duckdb` de
+`atomic_write`, esas vistas quedaban rotas en el Gold publicado. Se
+detectó en la primera corrida real.
 
 **Guarda contra ir hacia atrás:** si Gold ya está en un `as_of` posterior
 a D, `gold-build --dia D` falla, salvo con `--full-refresh`. Correr el
@@ -72,8 +78,14 @@ atrás requiere full refresh).
 
 ## Consecuencias
 
-- Costo: una copia del archivo por corrida. Silver completo pesa 31 MB, así
-  que se espera un Gold de decenas de MB; se mide en la corrida real.
+- Costo: una copia del archivo por corrida. Gold completo pesa unos 45 MB,
+  y `gold-build` tarda unos 20 s en total sobre Olist completo, dbt
+  incluido.
+- La ruta del temporal es fija, así que el perfil de dbt no cambia entre
+  corridas y dbt puede reusar su parseo parcial del proyecto (con una ruta
+  distinta por corrida, cada una reparseaba todo).
+- `_gold_build` guarda `built_at` y `silver_built_at` como `TIMESTAMP` en
+  UTC, sin zona.
 - `_gold_build` es consultable con SQL: cualquiera puede preguntarle a Gold
   a qué día corresponde sin leer ningún archivo aparte.
 - En Windows, `os.replace` falla si otro proceso tiene abierto
@@ -82,7 +94,7 @@ atrás requiere full refresh).
   funciona y quien ya estaba leyendo sigue viendo la versión anterior
   completa.
 - Mientras corre `gold-build`, los lectores siguen viendo el Gold anterior.
-  Dos `gold-build` simultáneos se pisarían al reemplazar: serializar las
-  corridas sigue pendiente para la Fase 5.
-- Una corrida interrumpida puede dejar huérfanos en `gold/_staging/`, sin
-  efecto sobre los lectores (igual que en Bronze y Silver).
+  Dos `gold-build` simultáneos usarían el mismo temporal y se pisarían:
+  serializar las corridas sigue pendiente para la Fase 5.
+- Una corrida interrumpida puede dejar restos en `gold/_staging/build/`,
+  sin efecto sobre los lectores; la corrida siguiente los borra al empezar.

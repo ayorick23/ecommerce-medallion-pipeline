@@ -15,6 +15,7 @@ dependencies = [
 [project.scripts]
 bronze-replay = "medallion.bronze.replay:main"
 silver-build = "medallion.silver.build:main"
+gold-build = "medallion.gold.build:main"
 gold-dbt = "medallion.gold.dbt:main"
 
 # Instalable como paquete `medallion` (src/medallion/), ADR 0016.
