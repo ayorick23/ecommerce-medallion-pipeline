@@ -39,6 +39,7 @@ dev = [
     "pre-commit>=4.6.2",
     "pytest>=9.1.1",
     "ruff>=0.16.3",
+    "shandy-sqlfmt>=0.32.0",
     "types-pyyaml>=6.0.12.20260906",
 ]
 gold = [
@@ -58,6 +59,12 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+# Formateador del SQL de dbt (ADR 0036), con el mismo largo de línea que ruff.
+# No renderiza Jinja: no necesita las variables de entorno de la ADR 0027.
+[tool.sqlfmt]
+line_length = 100
+exclude = ["dbt/target/**/*", "dbt/dbt_packages/**/*"]
 
 [tool.mypy]
 python_version = "3.12"

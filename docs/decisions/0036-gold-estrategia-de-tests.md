@@ -74,7 +74,14 @@ los modelos que dependen de él, el comando falla y no se publica nada (ADR
   sobre los datos completos. Se corre en local y el resultado se documenta
   en `docs/schemas.md`, como la corrida real de la Fase 3.
 
-**Sin SQLFluff en esta fase.**
+**Formato del SQL con sqlfmt**, el paralelo de `ruff format`:
+
+- Dependencia de desarrollo, con `line_length = 100` en `pyproject.toml`
+  (el mismo largo que ruff).
+- Hook en pre-commit y paso `sqlfmt --check dbt` en la CI.
+- No renderiza Jinja, así que no necesita las variables de entorno de la
+  ADR 0027.
+- No se agrega un linter de SQL (SQLFluff) en esta fase.
 
 ## Alternativas consideradas
 
@@ -98,10 +105,17 @@ los modelos que dependen de él, el comando falla y no se publica nada (ADR
 - **Recorrer los ~780 días reales en la CI:** cada corrida invoca dbt; no
   es viable en la CI y en local no vale la pena. El fixture prueba la
   lógica en cada caso límite; la ventana real, la escala.
-- **SQLFluff:** su templater de dbt tiene que compilar el proyecto, y con
-  la ADR 0027 eso obliga a pasar por el envoltorio incluso en pre-commit.
-  Es más fricción que valor en un proyecto de una sola persona. Queda
-  anotado como mejora posible.
+- **Sin formateador de SQL:** el estilo dependería de quien escribe; es
+  lo contrario de lo que se hace con Python.
+- **SQLFluff** (linter y formateador): se puede configurar con la guía de
+  estilo de dbt Labs. Su templater de dbt tiene que compilar el proyecto,
+  lo que con la ADR 0027 obliga a pasar por el envoltorio. El templater de
+  Jinja evita eso, pero exige simular las macros de `dbt_utils`, es lento y
+  su corrección automática es menos completa que la de un formateador.
+  Las reglas que revisaría las cubren, en lo importante, los tests y
+  contratos de dbt. Queda como mejora posible, compatible con sqlfmt.
+- **La extensión dbt Formatter de VS Code:** solo existe en el editor, no
+  en la CI, y está sin mantenimiento.
 
 ## Por qué
 
@@ -116,7 +130,10 @@ datos.
 ## Consecuencias
 
 - La CI suma un paso `dbt deps` antes de pytest, y sus tiempos crecen:
-  cada `gold-build` invoca dbt.
+  cada `gold-build` invoca dbt. También suma `sqlfmt --check dbt`.
+- sqlfmt impone su estilo, sin configuración: `with` en su propia línea y
+  CTEs indentadas, y listas largas con un elemento por línea. Se acepta tal
+  cual, como con ruff.
 - Los contratos obligan a castear explícitamente las columnas de los marts,
   sobre todo los montos después de agregar.
 - Cada ADR de modelado (0030–0035) enumera los tests que le corresponden;
