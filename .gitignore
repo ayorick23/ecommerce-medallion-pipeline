@@ -30,3 +30,8 @@ logs/*
 .vscode/
 .idea/
 .DS_Store
+
+# dbt (ADR 0026): artefactos de compilación, logs y paquetes instalados
+dbt/target/
+dbt/logs/
+dbt/dbt_packages/

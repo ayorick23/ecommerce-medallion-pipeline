@@ -1,0 +1,10 @@
+# Sin secretos: la única configuración es la ruta del archivo DuckDB, que
+# define el comando a partir de config/pipeline.yaml (ADR 0027). Sin valor
+# por defecto a propósito: `dbt` a secas falla en vez de escribir en otro lado.
+medallion:
+  target: gold
+  outputs:
+    gold:
+      type: duckdb
+      path: "{{ env_var('MEDALLION_GOLD_DB') }}"
+      threads: 4

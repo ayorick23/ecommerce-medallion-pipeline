@@ -1,0 +1,6 @@
+# Versión exacta (ADR 0036). Desde git y no desde hub.getdbt.com: el hub no es
+# accesible detrás de algunos proxys corporativos, y un tag fijo es igual de
+# reproducible.
+packages:
+  - git: "https://github.com/dbt-labs/dbt-utils.git"
+    revision: "1.4.1"
