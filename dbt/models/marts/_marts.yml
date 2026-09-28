@@ -1,0 +1,498 @@
+# Capa de consumo de Gold (docs/schemas.md, sección 6). Cada mart tiene
+# contrato aplicado (ADR 0036): el build falla si una columna o su tipo
+# difiere de lo declarado aquí.
+
+models:
+  # --- Dimensiones -------------------------------------------------------------
+
+  - name: dim_cliente
+    description: >
+      SCD2 de persona (ADR 0030): una fila por versión de dirección de un
+      customer_unique_id, construida con los pedidos visibles a la fecha D.
+      Volver a una dirección anterior abre una versión nueva. Intervalos
+      semiabiertos [valid_from, valid_to).
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [customer_unique_id, valid_from]
+      - dbt_utils.mutually_exclusive_ranges:
+          arguments:
+            lower_bound_column: valid_from
+            upper_bound_column: "coalesce(valid_to, cast('9999-12-31' as timestamp))"
+            partition_by: customer_unique_id
+            gaps: not_allowed
+    columns:
+      - name: cliente_sk
+        data_type: varchar
+        description: >
+          Clave sustituta: hash de (customer_unique_id, valid_from). Estable
+          aunque la dimensión se reconstruya, porque depende de la clave
+          natural y no del orden de las filas.
+        data_tests: [unique, not_null]
+      - name: customer_unique_id
+        data_type: varchar
+        description: La persona real (customer_id en Olist es uno por pedido).
+        data_tests:
+          - not_null
+          - unique:
+              config:
+                where: is_current
+      - name: customer_zip_code_prefix
+        data_type: varchar
+        description: Código postal de la versión, 5 dígitos.
+      - name: customer_city
+        data_type: varchar
+        description: Ciudad de la versión.
+      - name: customer_state
+        data_type: varchar
+        description: Estado (UF) de la versión.
+      - name: geolocation_lat
+        data_type: double
+        description: >
+          Latitud promedio del código postal (ADR 0035). Nula si el código no
+          tiene geolocalización: filtrar los nulos en análisis geográficos.
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: -33.75
+                max_value: 5.27
+      - name: geolocation_lng
+        data_type: double
+        description: Longitud promedio del código postal; nula igual que la latitud.
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: -73.99
+                max_value: -34.79
+      - name: valid_from
+        data_type: timestamp
+        description: Compra del primer pedido de la versión.
+        data_tests: [not_null]
+      - name: valid_to
+        data_type: timestamp
+        description: Inicio de la versión siguiente; nulo en la vigente.
+      - name: is_current
+        data_type: boolean
+        description: Verdadero solo en la versión vigente de la persona.
+        data_tests: [not_null]
+
+  - name: dim_producto
+    description: Una fila por producto; snapshot de referencia sin enmascarar.
+    columns:
+      - name: product_id
+        data_type: varchar
+        description: Identificador del producto.
+        data_tests: [unique, not_null]
+      - name: product_category_name
+        data_type: varchar
+        description: Categoría en portugués; "sem_categoria" si la fuente no la trae.
+      - name: product_category_name_english
+        data_type: varchar
+        description: Categoría en inglés; sin traducción, el nombre en portugués.
+      - name: product_name_length
+        data_type: bigint
+        description: Largo del nombre del producto (caracteres).
+      - name: product_description_length
+        data_type: bigint
+        description: Largo de la descripción (caracteres).
+      - name: product_photos_qty
+        data_type: bigint
+        description: Cantidad de fotos publicadas.
+      - name: product_weight_g
+        data_type: bigint
+        description: Peso en gramos.
+      - name: product_length_cm
+        data_type: bigint
+        description: Largo en centímetros.
+      - name: product_height_cm
+        data_type: bigint
+        description: Alto en centímetros.
+      - name: product_width_cm
+        data_type: bigint
+        description: Ancho en centímetros.
+
+  - name: dim_vendedor
+    description: Una fila por vendedor; snapshot de referencia sin enmascarar.
+    columns:
+      - name: seller_id
+        data_type: varchar
+        description: Identificador del vendedor.
+        data_tests: [unique, not_null]
+      - name: seller_zip_code_prefix
+        data_type: varchar
+        description: Código postal, 5 dígitos.
+      - name: seller_city
+        data_type: varchar
+        description: Ciudad.
+      - name: seller_state
+        data_type: varchar
+        description: Estado (UF).
+      - name: geolocation_lat
+        data_type: double
+        description: Latitud promedio del código postal; nula si no hay geolocalización (ADR 0035).
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: -33.75
+                max_value: 5.27
+      - name: geolocation_lng
+        data_type: double
+        description: Longitud promedio del código postal; nula igual que la latitud.
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: -73.99
+                max_value: -34.79
+
+  - name: dim_tiempo
+    description: >
+      Calendario fijo 2016-01-01 a 2020-12-31 (vars de dbt_project.yml, ADR
+      0032). Todas las fechas de los hechos son FK a esta tabla.
+    columns:
+      - name: fecha
+        data_type: date
+        description: El día (clave).
+        data_tests: [unique, not_null]
+      - name: anio
+        data_type: bigint
+        description: Año.
+      - name: trimestre
+        data_type: bigint
+        description: Trimestre, 1 a 4.
+      - name: mes
+        data_type: bigint
+        description: Mes, 1 a 12.
+      - name: nombre_mes
+        data_type: varchar
+        description: Nombre del mes en español.
+      - name: dia
+        data_type: bigint
+        description: Día del mes.
+      - name: dia_semana
+        data_type: bigint
+        description: Día de la semana ISO, 1 = lunes a 7 = domingo.
+      - name: nombre_dia
+        data_type: varchar
+        description: Nombre del día en español.
+      - name: semana_iso
+        data_type: bigint
+        description: Semana del año ISO.
+      - name: anio_mes
+        data_type: varchar
+        description: Año y mes, AAAA-MM.
+      - name: es_fin_de_semana
+        data_type: boolean
+        description: Sábado o domingo.
+      - name: es_feriado
+        data_type: boolean
+        description: Feriado nacional de Brasil.
+      - name: nombre_feriado
+        data_type: varchar
+        description: Nombre del feriado en portugués; nulo si no es feriado.
+
+  - name: dim_estado_pedido
+    description: Los 6 estados del pedido en Gold (ADR 0031).
+    columns:
+      - name: estado
+        data_type: varchar
+        description: Estado (clave).
+        data_tests:
+          - unique
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [creado, aprobado, despachado, entregado, cancelado, no_disponible]
+      - name: descripcion
+        data_type: varchar
+        description: Qué significa el estado.
+      - name: categoria
+        data_type: varchar
+        description: en_curso, completado o cancelado.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [en_curso, completado, cancelado]
+      - name: es_terminal
+        data_type: boolean
+        description: El pedido ya no cambia de estado.
+      - name: orden
+        data_type: bigint
+        description: Orden para listar los estados (embudo).
+
+  # --- Hechos ------------------------------------------------------------------
+
+  - name: fct_pedidos
+    description: >
+      Accumulating snapshot por línea de pedido (ADR 0033), incremental con
+      merge (ADR 0029). Las fechas y medidas de proceso son del pedido y se
+      repiten en cada línea: los KPIs por pedido se calculan sobre pedidos
+      distintos (COUNT(DISTINCT order_id) o agregando antes por pedido).
+      price y freight_value sí son aditivas por línea. Los pedidos sin líneas
+      (cancelados o no disponibles antes de tener items) no están aquí.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [order_id, order_item_id]
+    columns:
+      - name: order_id
+        data_type: varchar
+        description: Pedido (dimensión degenerada).
+        data_tests: [not_null]
+      - name: order_item_id
+        data_type: bigint
+        description: Posición de la línea dentro del pedido.
+        data_tests: [not_null]
+      - name: cliente_sk
+        data_type: varchar
+        description: Versión del cliente vigente a la compra.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_cliente')
+                field: cliente_sk
+      - name: product_id
+        data_type: varchar
+        description: Producto de la línea.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_producto')
+                field: product_id
+      - name: seller_id
+        data_type: varchar
+        description: Vendedor de la línea.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_vendedor')
+                field: seller_id
+      - name: estado
+        data_type: varchar
+        description: >
+          Estado del pedido a la fecha D. Un pedido cancelado figura cancelado
+          desde su compra (fuga aceptada, ADR 0018).
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_estado_pedido')
+                field: estado
+      - name: fecha_compra
+        data_type: date
+        description: Rol de fecha de compra.
+        data_tests:
+          - not_null
+          - relationships: &fecha_en_calendario
+              arguments:
+                to: ref('dim_tiempo')
+                field: fecha
+      - name: fecha_aprobacion
+        data_type: date
+        description: Rol de fecha de aprobación; nula si no ocurrió a la fecha D.
+        data_tests:
+          - relationships: *fecha_en_calendario
+      - name: fecha_despacho
+        data_type: date
+        description: Rol de fecha de entrega al transportista; nula si no ocurrió a la fecha D.
+        data_tests:
+          - relationships: *fecha_en_calendario
+      - name: fecha_entrega
+        data_type: date
+        description: Rol de fecha de entrega al cliente; nula si no ocurrió a la fecha D.
+        data_tests:
+          - relationships: *fecha_en_calendario
+      - name: fecha_entrega_estimada
+        data_type: date
+        description: Promesa de entrega, conocida desde la compra; puede ser futura.
+        data_tests:
+          - not_null
+          - relationships: *fecha_en_calendario
+      - name: fecha_limite_envio
+        data_type: date
+        description: Plazo del vendedor (shipping_limit_date); puede ser futura.
+        data_tests:
+          - not_null
+          - relationships: *fecha_en_calendario
+      - name: price
+        data_type: decimal(18,2)
+        description: Precio de la línea.
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range: &no_negativo
+              arguments:
+                min_value: 0
+      - name: freight_value
+        data_type: decimal(18,2)
+        description: Flete de la línea.
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range: *no_negativo
+      - name: dias_hasta_aprobacion
+        data_type: double
+        description: Días (con fracción) de la compra a la aprobación; del pedido.
+        data_tests:
+          - dbt_utils.accepted_range: *no_negativo
+      - name: dias_hasta_entrega
+        data_type: double
+        description: Días (con fracción) de la compra a la entrega al cliente; del pedido.
+        data_tests:
+          - dbt_utils.accepted_range: *no_negativo
+      - name: dias_retraso
+        data_type: double
+        description: Entrega real menos estimada, en días; negativo si llegó antes.
+      - name: es_entrega_tardia
+        data_type: boolean
+        description: Entrega real posterior a la estimada; nulo si no se entregó.
+      - name: _visible_desde
+        data_type: timestamp
+        description: Marca de agua técnica (ADR 0029); no es una medida.
+        data_tests: [not_null]
+
+  - name: fct_pagos
+    description: Una fila por pago; incremental en modo append (ADR 0029).
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [order_id, payment_sequential]
+    columns:
+      - name: order_id
+        data_type: varchar
+        description: Pedido (dimensión degenerada).
+        data_tests: [not_null]
+      - name: payment_sequential
+        data_type: bigint
+        description: Secuencia del pago dentro del pedido.
+        data_tests: [not_null]
+      - name: cliente_sk
+        data_type: varchar
+        description: Versión del cliente vigente a la compra del pedido.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_cliente')
+                field: cliente_sk
+      - name: fecha_compra
+        data_type: date
+        description: Rol de fecha de compra del pedido.
+        data_tests:
+          - not_null
+          - relationships: *fecha_en_calendario
+      - name: payment_type
+        data_type: varchar
+        description: Medio de pago (atributo degenerado).
+        data_tests: [not_null]
+      - name: payment_installments
+        data_type: bigint
+        description: Cuotas.
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range: *no_negativo
+      - name: payment_value
+        data_type: decimal(18,2)
+        description: Monto del pago.
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range: *no_negativo
+      - name: _visible_desde
+        data_type: timestamp
+        description: Marca de agua técnica (ADR 0029); no es una medida.
+        data_tests: [not_null]
+
+  - name: fct_reviews
+    description: >
+      Una fila por review (ADR 0034): COUNT(*) y AVG(review_score) son
+      correctos sin DISTINCT. Para cruzar con productos o vendedores se pasa
+      por puente_review_pedido; ahí una review cuenta en cada línea a la que
+      llega.
+    columns:
+      - name: review_id
+        data_type: varchar
+        description: La review (clave).
+        data_tests: [unique, not_null]
+      - name: cliente_sk
+        data_type: varchar
+        description: >
+          Versión del cliente vigente a la creación; si la review es anterior a
+          la primera versión (review adelantada, ADR 0020), la primera.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_cliente')
+                field: cliente_sk
+      - name: fecha_creacion
+        data_type: date
+        description: Rol de fecha de creación de la review.
+        data_tests:
+          - not_null
+          - relationships: *fecha_en_calendario
+      - name: fecha_respuesta
+        data_type: date
+        description: Rol de fecha de respuesta; nula si la respuesta es posterior a D.
+        data_tests:
+          - relationships: *fecha_en_calendario
+      - name: review_score
+        data_type: bigint
+        description: Puntaje de 1 a 5.
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 1
+                max_value: 5
+      - name: review_comment_title
+        data_type: varchar
+        description: Título tal cual la fuente (portugués, sin normalizar).
+      - name: review_comment_message
+        data_type: varchar
+        description: Mensaje tal cual la fuente (portugués, sin normalizar; puede traer saltos de línea).
+      - name: tiene_comentario
+        data_type: boolean
+        description: Hay un mensaje no vacío; un título sin mensaje no cuenta.
+        data_tests: [not_null]
+      - name: dias_hasta_respuesta
+        data_type: double
+        description: Días (con fracción) de la creación a la respuesta; nula sin respuesta.
+        data_tests:
+          - dbt_utils.accepted_range: *no_negativo
+      - name: _visible_desde
+        data_type: timestamp
+        description: Marca de agua técnica (ADR 0029); no es una medida.
+        data_tests: [not_null]
+
+  - name: puente_review_pedido
+    description: >
+      Vínculos review–pedido (ADR 0034). Algunos pedidos con review no tienen
+      líneas (cancelados o no disponibles), así que no todo order_id de aquí
+      está en fct_pedidos.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [review_id, order_id]
+    columns:
+      - name: review_id
+        data_type: varchar
+        description: La review.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('fct_reviews')
+                field: review_id
+      - name: order_id
+        data_type: varchar
+        description: Un pedido asociado a la review.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('int_pedido_estado')
+                field: order_id
+      - name: _visible_desde
+        data_type: timestamp
+        description: Marca de agua técnica (ADR 0029); no es una medida.
+        data_tests: [not_null]

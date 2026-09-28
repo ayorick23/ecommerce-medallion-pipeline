@@ -71,8 +71,9 @@ tener seis calendarios.
   los pedidos con más líneas. Se documenta en `docs/schemas.md` y en la
   descripción del modelo. `price` y `freight_value` sí son aditivas por
   línea.
-- Medido en el diseño, por pedido entregado: 12.5 días promedio de la
-  compra a la entrega y 8.1% de entregas tardías. La corrida real tiene que
-  reproducirlos.
+- Medido sobre Silver al último día, por pedido entregado: 12.56 días
+  promedio de la compra a la entrega (con fracción; 12.50 si se cuentan
+  días calendario) y 8.1% de entregas tardías. Promediando fila por fila
+  da 12.47: el sesgo de la advertencia anterior, con números reales.
 - Toda fecha role-playing tiene su test de `relationships` contra
   `dim_tiempo` (ADR 0032).

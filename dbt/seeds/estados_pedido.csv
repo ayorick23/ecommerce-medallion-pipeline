@@ -1,0 +1,7 @@
+estado,descripcion,categoria,es_terminal,orden
+creado,Pedido registrado; todavía no aprobado,en_curso,false,1
+aprobado,Pago aprobado; todavía no despachado,en_curso,false,2
+despachado,Entregado al transportista; todavía no llegó al cliente,en_curso,false,3
+entregado,Recibido por el cliente,completado,true,4
+cancelado,Cancelado (según el estado final de la fuente),cancelado,true,5
+no_disponible,Producto no disponible (según el estado final de la fuente),cancelado,true,6

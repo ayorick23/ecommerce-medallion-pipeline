@@ -227,8 +227,8 @@ Contrato completo en `docs/schemas.md`, sección 6.
       reviews y 99,224 filas en el puente).
     - Sumas de `price`, `freight_value` y `payment_value` idénticas a
       Silver.
-    - Los KPIs medidos en el diseño se reproducen (12.5 días promedio,
-      8.1% de entregas tardías, score promedio de 4.0888).
+    - Los KPIs medidos en el diseño se reproducen (12.56 días promedio
+      por pedido, 8.1% de entregas tardías, score promedio de 4.0888).
     - Tiempo de full refresh, tiempo por día incremental y tamaño del
       `.duckdb`, medidos.
 11. **Cierre:**
