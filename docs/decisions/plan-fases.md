@@ -24,7 +24,8 @@ pedagógico, no solo un checklist técnico.
    devuelven datos), testeables con pytest sin levantar Airflow; Gold se
    implementa como un proyecto dbt sobre DuckDB (ADR 0007). Airflow solo
    orquesta — los `PythonOperator`/`@task` son envoltorios delgados que
-   llaman a esas funciones o a `dbt build`. Esto es estándar en la industria
+   llaman a esas funciones o a `gold-build`, que envuelve `dbt build` (ADR
+   0027). Esto es estándar en la industria
    porque permite testear la lógica de negocio en segundos, no en minutos
    con un scheduler corriendo.
 3. **Fail-fast real.** Ninguna capa avanza a la siguiente si la validación
@@ -162,6 +163,82 @@ de `docs/schemas.md`).
 sources, tests, docs y linaje), estrategias de materialización y carga
 (tabla completa vs. incremental/merge) en DuckDB.
 
+**Diseño cerrado (2026-09-28):**
+
+- **Proyecto dbt:** vive en `dbt/`, con capas staging → intermediate →
+  marts y dbt en un grupo de dependencias `gold` (ADR 0026).
+- **Ejecución:** dbt se corre solo a través de `gold-build --dia D` y
+  `gold-dbt`, que toman las rutas de `pipeline.yaml` y las pasan como
+  variables de entorno sin valor por defecto. `gold-build` además verifica
+  el manifiesto de Silver. Esta decisión supera parcialmente a la ADR 0007
+  (ADR 0027).
+- **Publicación:** Gold se construye sobre una copia y se publica
+  reemplazando el archivo, con la tabla `_gold_build` y una guarda contra
+  ir hacia atrás (ADR 0028).
+- **Materialización:** dimensiones completas y hechos incrementales con
+  marca de agua `_visible_desde` (ADR 0029).
+- **Modelado:**
+  - `dim_cliente` es SCD2 de persona, con `cliente_sk` como hash (ADR
+    0030).
+  - Estado del pedido combinado, con 6 estados (ADR 0031).
+  - Calendario fijo 2016–2020 con feriados (ADR 0032).
+  - `fct_pedidos` es un accumulating snapshot (ADR 0033).
+  - `fct_reviews` con una tabla puente a los pedidos (ADR 0034).
+  - Coordenadas como atributos (ADR 0035).
+- **Tests:** `dbt_utils`, contratos en los marts, unit tests de dbt y un
+  fixture propio de Gold (ADR 0036).
+
+Contrato completo en `docs/schemas.md`, sección 6.
+
+**Criterio de "hecho":** propiedades probadas, no asumidas:
+
+1. **Construcción:** `gold-build --dia D` corre `dbt build` y deja Gold en
+   D con todos los tests en verde, para varios D (inicio, medio y último
+   día del rango).
+2. **Guardas previas:** si falta el manifiesto de Silver, si su `as_of` no
+   es D, si Gold está en un día posterior a D sin `--full-refresh`, o si la
+   ruta de Gold no es local, el comando falla **sin tocar Gold**.
+3. **Atomicidad:** con un test que falla a propósito, Gold queda idéntico
+   al anterior (mismo contenido y misma `_gold_build`) y no quedan
+   temporales.
+4. **Idempotencia:** correr D dos veces da el mismo contenido, salvo
+   `built_at`.
+5. **Equivalencia:** incremental día a día == full refresh en el mismo D,
+   en todas las tablas. Se prueba con el fixture de Gold recorriendo cada
+   día en la CI, y con una ventana real de unos 30 días, documentada.
+   Prueba también la estabilidad de `cliente_sk`.
+6. **Sin datos del futuro:** Gold(D) no tiene ninguna fecha de evento
+   posterior a D. Excepción explícita: las fechas que son promesas
+   (entrega estimada, límite de envío).
+7. **Reglas Silver→Gold y del modelado, como tests de dbt** (sección 4 de
+   `docs/schemas.md`):
+   - FKs de todos los hechos, incluidas las fechas role-playing.
+   - Grano único.
+   - Medidas en rango.
+   - Rangos SCD2 sin solape y una versión vigente por persona.
+   - Cada hecho apunta a la versión vigente a su fecha.
+   - Solo los 6 estados.
+8. **Fail-fast probado:** por cada tipo de regla (FK, grano, rango), un
+   Silver corrompido a propósito en el fixture hace fallar `gold-build`.
+9. **Contratos y unit tests:** marts con contrato aplicado; un unit test
+   con nombre por cada caso de las ADRs 0030 y 0031.
+10. **Corrida real conciliada:**
+    - Conteos iguales a Silver (112,650 líneas, 103,886 pagos, 98,410
+      reviews y 99,224 filas en el puente).
+    - Sumas de `price`, `freight_value` y `payment_value` idénticas a
+      Silver.
+    - Los KPIs medidos en el diseño se reproducen (12.5 días promedio,
+      8.1% de entregas tardías, score promedio de 4.0888).
+    - Tiempo de full refresh, tiempo por día incremental y tamaño del
+      `.duckdb`, medidos.
+11. **Cierre:**
+    - ruff, mypy, pre-commit y CI en verde (la CI con `dbt deps` y los
+      tests de Gold).
+    - `gold-dbt docs generate` sin errores, con cada modelo y columna de
+      los marts documentados.
+    - ADRs escritas, `schemas.md` actualizado, README y apuntes de la
+      fase.
+
 ---
 
 ### Fase 5 — Orquestación completa con Airflow
@@ -235,7 +312,7 @@ Cada herramienta cumple un rol; ninguna se solapa con otra.
 | Raíz de almacenamiento | Configurable: local por defecto; Azurite / Azure Blob opcionales | 0008 |
 | Transformación Bronze/Silver | Polars (funciones puras en `src/`) | 0002, 0007 |
 | Calidad Bronze→Silver | Pandera | 0001, 0003 |
-| Transformación y calidad Silver→Gold | dbt Core + `dbt-duckdb` (modelos + tests) | 0007 |
+| Transformación y calidad Silver→Gold | dbt Core + `dbt-duckdb` (modelos + tests), ejecutado vía `gold-build` | 0007, 0026, 0027, 0036 |
 | Orquestación | Apache Airflow (Azure Data Factory documentado como alternativa) | 0009 |
 | Metastore de Airflow | Postgres (solo estado de Airflow, nunca datos del pipeline) | 0005 |
 | Empaquetado / reproducibilidad | Docker Compose | — |
@@ -248,7 +325,7 @@ data/bronze/<tabla>/dia_simulado=YYYY-MM-DD/*.parquet  (+ linaje)
    │  Airflow → silver_build                          [Polars + Pandera, fail-fast]
    ▼
 data/silver/<tabla>/*.parquet
-   │  Airflow → dbt build                             [dbt-duckdb, tests = fail-fast]
+   │  Airflow → gold-build (dbt build)                [dbt-duckdb, tests = fail-fast]
    ▼
 data/gold/warehouse.duckdb  (star schema: dim_* / fct_*)
    │
@@ -269,7 +346,7 @@ Cada decisión de diseño no trivial vive como archivo independiente en
 | [0004](0004-bronze-append-only-reemision-por-evento.md) | Bronze append-only con re-emisión por evento | Aceptada |
 | [0005](0005-almacenamiento-por-capa-parquet-duckdb.md) | Almacenamiento por capa: Parquet en Bronze/Silver, DuckDB en Gold | Aceptada |
 | [0006](0006-parquet-plano-vs-delta-lake.md) | Parquet plano en lugar de Delta Lake / Iceberg | Aceptada |
-| [0007](0007-polars-bronze-silver-dbt-gold.md) | Polars en Bronze/Silver, dbt (dbt-duckdb) en Gold | Aceptada |
+| [0007](0007-polars-bronze-silver-dbt-gold.md) | Polars en Bronze/Silver, dbt (dbt-duckdb) en Gold | Aceptada — parcialmente superada por 0027 (invocación de dbt y tests de Gold) |
 | [0008](0008-almacenamiento-configurable-local-azurite-azure.md) | Almacenamiento configurable: local, Azurite o Azure Blob | Aceptada |
 | [0009](0009-airflow-como-orquestador-vs-adf.md) | Airflow como orquestador (ADF como alternativa) | Aceptada |
 | [0010](0010-sin-dvc-versionamiento-datos.md) | No usar DVC para versionar datos | Aceptada |
@@ -288,3 +365,14 @@ Cada decisión de diseño no trivial vive como archivo independiente en
 | [0023](0023-silver-validacion-excepcion-reporte.md) | Validación de Silver: todas las fallas en una `SilverValidationError` | Aceptada |
 | [0024](0024-silver-escritura-manifiesto.md) | Escritura de Silver: un archivo por tabla y un manifiesto | Aceptada |
 | [0025](0025-geolocalizacion-descartar-coordenadas-fuera-de-brasil.md) | Geolocalización: descartar coordenadas fuera de Brasil | Aceptada |
+| [0026](0026-gold-proyecto-dbt-capas-dependencias.md) | Proyecto dbt de Gold: ubicación, capas y dependencias | Aceptada |
+| [0027](0027-gold-dbt-via-comando-env-var-manifiesto.md) | dbt vía `gold-build` / `gold-dbt`: rutas por `env_var` y manifiesto de Silver | Aceptada |
+| [0028](0028-gold-escritura-atomica-copia-reemplazo.md) | Escritura atómica de Gold: copia y reemplazo del archivo | Aceptada |
+| [0029](0029-gold-materializacion-dims-completas-hechos-incrementales.md) | Materialización: dimensiones completas, hechos incrementales | Aceptada |
+| [0030](0030-dim-cliente-scd2-persona-clave-hash.md) | `dim_cliente` como SCD2 de persona, con `cliente_sk` como hash | Aceptada |
+| [0031](0031-estado-pedido-combinado-dim-estado-pedido.md) | Estado del pedido combinado y `dim_estado_pedido` con 6 estados | Aceptada |
+| [0032](0032-dim-tiempo-calendario-fijo-feriados.md) | `dim_tiempo`: calendario fijo 2016–2020 con feriados | Aceptada |
+| [0033](0033-fct-pedidos-accumulating-snapshot.md) | `fct_pedidos` como accumulating snapshot | Aceptada |
+| [0034](0034-reviews-fct-reviews-puente-pedidos.md) | Reviews: `fct_reviews` más una tabla puente | Aceptada |
+| [0035](0035-coordenadas-atributos-sin-dim-ubicacion.md) | Coordenadas como atributos, sin `dim_ubicacion` | Aceptada |
+| [0036](0036-gold-estrategia-de-tests.md) | Estrategia de tests de Gold | Aceptada |

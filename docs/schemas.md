@@ -5,7 +5,7 @@
 > Decisiones de arquitectura no triviales referenciadas están en
 > `docs/decisions/` (ADRs 0001-0004; stack y almacenamiento en 0005-0009;
 > implementación física de Bronze en 0010-0015; diseño de Silver en
-> 0017-0025).
+> 0017-0025; diseño de Gold en 0026-0036).
 
 ## Convenciones generales
 
@@ -440,14 +440,23 @@ Todas las fallas de una corrida se reportan juntas en una sola
 
 ### Silver → Gold (dispara fail-fast)
 
-- Cualquier fila de un fact (`fct_pedidos`, `fct_pagos`) que no resuelva
-  **todas** sus FKs contra las dimensiones correspondientes — debería ser
-  imposible dado que Silver ya garantiza integridad referencial, pero se
-  revalida como red de seguridad en el borde Silver→Gold.
+Se implementan como tests de dbt con severidad `error`; un test que falla
+hace fallar `gold-build` y Gold no se publica (ADRs 0007, 0028, 0036).
+
+- Cualquier fila de un fact (`fct_pedidos`, `fct_pagos`, `fct_reviews`,
+  `puente_review_pedido`) que no resuelva **todas** sus FKs contra las
+  dimensiones correspondientes, incluidas las fechas role-playing contra
+  `dim_tiempo` — debería ser imposible dado que Silver ya garantiza
+  integridad referencial, pero se revalida como red de seguridad en el
+  borde Silver→Gold.
 - Grano duplicado en un fact (ej. dos filas para el mismo
   `(order_id, order_item_id)` en `fct_pedidos`).
 - Medida imposible que haya sobrevivido agregaciones (mismos rangos que
   en Bronze→Silver).
+- SCD2 de `dim_cliente` inconsistente: rangos que se solapan, más de una
+  versión vigente por persona, o un hecho que apunta a una versión no
+  vigente a su fecha (ADR 0030).
+- Columnas o tipos de un mart distintos de su contrato (ADR 0036).
 
 ---
 
@@ -516,79 +525,260 @@ pedidos aprobados en el mismo segundo de la compra, 9 entregados en el
 mismo segundo del despacho).
 
 Esta tabla es la que responde "¿cuál era el estado de este pedido en la
-fecha X?" — no se modela como fact en Gold (el plan solo pide `fct_pedidos`
-y `fct_pagos`); Gold consume el estado **actual** (`is_current = true`) a
-través de `dim_estado_pedido`. El historial completo queda disponible en
-Silver para quien lo necesite consultar directamente.
+fecha X?" — no se modela como fact en Gold; Gold consume el estado
+**actual** (`is_current = true`) a través de `dim_estado_pedido`. El
+historial completo queda disponible en Silver para quien lo necesite
+consultar directamente.
 
-**Pendiente para la Fase 4:** el SCD2 no representa estados sin timestamp
-(`canceled`, `unavailable`, etc.). Un pedido cancelado después de
-aprobarse tiene `aprobado` como vigente y `order_status_raw = canceled`;
-`dim_estado_pedido` tiene que decidir cómo combinar ambos.
+**Resuelto en la Fase 4 (ADR 0031):** el SCD2 no representa estados sin
+timestamp (`canceled`, `unavailable`). Gold combina ambas fuentes: la
+cancelación y la no disponibilidad salen de `order_status` y ganan
+siempre; el resto de la progresión sale de la fila vigente del SCD2.
 
 ---
 
 ## 6. Capa Gold — modelo dimensional (star schema)
 
+Gold(D) es el modelo dimensional construido por dbt sobre Silver(D) y
+publicado de forma atómica en `gold/warehouse.duckdb` (ADRs 0026-0036).
+Reemplaza al contrato de Gold de la Fase 1: `dim_cliente` pasó a ser SCD2,
+`dim_estado_pedido` tiene 6 estados, `dim_tiempo` cubre un calendario
+fijo, `fct_pedidos` es un accumulating snapshot y se agregaron
+`fct_reviews` y `puente_review_pedido`.
+
+### Convenciones de Gold
+
+- **Tipos físicos** (DuckDB): identificadores y textos `VARCHAR`; fechas
+  `DATE`; instantes `TIMESTAMP`; montos `DECIMAL(18,2)` (ADR 0022);
+  enteros `BIGINT`; días con fracción y coordenadas `DOUBLE`; indicadores
+  `BOOLEAN`. Los marts tienen contrato de dbt aplicado: el build falla si
+  una columna o su tipo difiere de lo documentado aquí (ADR 0036).
+- **Nombres:** las columnas que vienen de la fuente conservan su nombre
+  (`price`, `review_score`); las derivadas en Gold van en español
+  (`cliente_sk`, `dias_hasta_entrega`). Los valores categóricos de Gold van
+  en español (`cancelado`, `lunes`).
+- **Claves:** `dim_cliente` usa la clave sustituta `cliente_sk` (hash, ADR
+  0030); el resto de las dimensiones, su clave natural. Las fechas de los
+  hechos son FKs `DATE` a `dim_tiempo`, cada una con su rol.
+- **Materialización** (ADR 0029): dimensiones como tabla completa; hechos
+  incrementales. `_visible_desde` es la marca de agua técnica de cada
+  hecho: el instante desde el cual su contenido actual es visible en
+  Silver. No es una medida.
+- **Capas internas:** staging e intermediate son vistas en sus propios
+  esquemas y leen el Silver actual; no son parte del contrato (ADR 0026).
+- **Filas:** los hechos deben coincidir con Silver en el último día del
+  replay (criterio de "hecho" de la Fase 4).
+
 ### Dimensiones
 
-**`dim_cliente`** — grano: `customer_unique_id` (la persona real, no
-`customer_id` que es por-pedido — ver Fase 0).
-Columnas: `customer_unique_id` (PK), `customer_zip_code_prefix`,
-`customer_city`, `customer_state`.
+**`dim_cliente`** (SCD2, ADR 0030) — grano: **una versión de dirección de
+una persona** (`customer_unique_id`). Se construye con los pedidos visibles
+en Silver(D), no con `silver_customers` sola (que conoce el futuro). Una
+versión nueva cada vez que la dirección difiere de la del pedido anterior;
+volver a una dirección vieja es una versión nueva. **PK:** `cliente_sk`.
+**Clave natural:** `(customer_unique_id, valid_from)`. **Filas:** una por
+persona (96,096 en el último día) más las versiones adicionales de las 252
+personas con más de una dirección.
 
-**`dim_producto`** — grano: `product_id`.
-Columnas: `product_id` (PK), `product_category_name`,
-`product_category_name_english`, `product_weight_g`, `product_length_cm`,
-`product_height_cm`, `product_width_cm`, `product_photos_qty`.
+| Columna | Tipo | Nullable | Notas |
+| --- | --- | --- | --- |
+| `cliente_sk` | VARCHAR | no | `generate_surrogate_key(customer_unique_id, valid_from)`: estable ante reconstrucciones |
+| `customer_unique_id` | VARCHAR | no | la persona |
+| `customer_zip_code_prefix` | VARCHAR | no | 5 dígitos |
+| `customer_city` | VARCHAR | no | |
+| `customer_state` | VARCHAR | no | |
+| `geolocation_lat` | DOUBLE | sí | por código postal de la versión; nula si no hay geolocalización (ADR 0035) |
+| `geolocation_lng` | DOUBLE | sí | ídem |
+| `valid_from` | TIMESTAMP | no | compra del primer pedido de la versión |
+| `valid_to` | TIMESTAMP | sí | `valid_from` de la versión siguiente; nulo en la vigente |
+| `is_current` | BOOLEAN | no | una sola versión vigente por persona |
 
-**`dim_vendedor`** — grano: `seller_id`.
-Columnas: `seller_id` (PK), `seller_zip_code_prefix`, `seller_city`,
-`seller_state`.
+Intervalos semiabiertos `[valid_from, valid_to)`, como el SCD2 de Silver.
 
-**`dim_tiempo`** — grano: 1 fila por día calendario, cubriendo el rango de
-fechas del dataset (2016-09 a 2018-10, confirmado en Fase 0).
-Columnas: `fecha` (PK), `anio`, `mes`, `dia`, `dia_semana`, `nombre_mes`,
-`es_fin_de_semana`.
+**`dim_producto`** — grano: `product_id`. **Filas:** 32,951. Todas las
+columnas de `silver_products` con sus mismos tipos y nulos:
+`product_id` (PK), `product_category_name`,
+`product_category_name_english`, `product_name_length`,
+`product_description_length`, `product_photos_qty`, `product_weight_g`,
+`product_length_cm`, `product_height_cm`, `product_width_cm`.
 
-**`dim_estado_pedido`** — grano: `status_event`.
-Columnas: `status_event` (PK, uno de `creado/aprobado/despachado/entregado`),
-`descripcion`.
+**`dim_vendedor`** — grano: `seller_id`. **Filas:** 3,095.
+
+| Columna | Tipo | Nullable | Notas |
+| --- | --- | --- | --- |
+| `seller_id` | VARCHAR | no | PK |
+| `seller_zip_code_prefix` | VARCHAR | no | 5 dígitos |
+| `seller_city` | VARCHAR | no | |
+| `seller_state` | VARCHAR | no | |
+| `geolocation_lat` | DOUBLE | sí | nula en 7 vendedores (ADR 0035) |
+| `geolocation_lng` | DOUBLE | sí | ídem |
+
+`dim_producto` y `dim_vendedor` salen de tablas de referencia sin
+enmascarar: a cualquier D contienen también productos y vendedores que
+todavía no vendieron (limitación ya documentada, "los snapshots conocen el
+futuro").
+
+**`dim_tiempo`** (ADR 0032) — grano: un día calendario, rango fijo
+2016-01-01 a 2020-12-31 (`vars` de `dbt_project.yml`). **PK:** `fecha`.
+**Filas:** 1,827.
+
+| Columna | Tipo | Nullable | Notas |
+| --- | --- | --- | --- |
+| `fecha` | DATE | no | PK |
+| `anio` | BIGINT | no | |
+| `trimestre` | BIGINT | no | 1-4 |
+| `mes` | BIGINT | no | 1-12 |
+| `nombre_mes` | VARCHAR | no | `enero` … `diciembre` (mapeo explícito, no depende del *locale*) |
+| `dia` | BIGINT | no | día del mes |
+| `dia_semana` | BIGINT | no | ISO: 1 = lunes … 7 = domingo |
+| `nombre_dia` | VARCHAR | no | `lunes` … `domingo` |
+| `semana_iso` | BIGINT | no | |
+| `anio_mes` | VARCHAR | no | `AAAA-MM` |
+| `es_fin_de_semana` | BOOLEAN | no | |
+| `es_feriado` | BOOLEAN | no | feriado nacional de Brasil (seed generado con `holidays`) |
+| `nombre_feriado` | VARCHAR | sí | nulo si no es feriado |
+
+**`dim_estado_pedido`** (ADR 0031, seed de dbt) — grano: estado. **PK:**
+`estado`. **Filas:** 6.
+
+| `estado` | `categoria` | `es_terminal` | `orden` |
+| --- | --- | --- | --- |
+| `creado` | `en_curso` | false | 1 |
+| `aprobado` | `en_curso` | false | 2 |
+| `despachado` | `en_curso` | false | 3 |
+| `entregado` | `completado` | true | 4 |
+| `cancelado` | `cancelado` | true | 5 |
+| `no_disponible` | `cancelado` | true | 6 |
+
+Más `descripcion` (VARCHAR). Tipos: `estado`, `categoria` VARCHAR;
+`es_terminal` BOOLEAN; `orden` BIGINT.
 
 ### Hechos
 
-**`fct_pedidos`** — grano: `(order_id, order_item_id)` (línea de pedido,
-no el pedido completo — así se conserva el detalle de precio/flete por
-producto).
-Columnas: `order_id`, `order_item_id`, `customer_unique_id` (FK),
-`product_id` (FK), `seller_id` (FK), `fecha_compra` (FK a `dim_tiempo`,
-vía `order_purchase_timestamp`), `status_event` (FK a
-`dim_estado_pedido`, estado actual del pedido). Medidas: `price`,
-`freight_value`.
+**`fct_pedidos`** (accumulating snapshot, ADR 0033) — grano: línea de
+pedido. **PK:** `(order_id, order_item_id)`. Incremental con merge por la
+PK (ADR 0029). **Filas:** 112,650 en el último día.
 
-**`fct_pagos`** — grano: `(order_id, payment_sequential)`.
-Columnas: `order_id`, `payment_sequential`, `customer_unique_id` (FK, vía
-el pedido), `fecha_compra` (FK a `dim_tiempo`), `payment_type` (atributo
-degenerado — baja cardinalidad, no amerita dimensión propia). Medidas:
-`payment_value`, `payment_installments`.
+| Columna | Tipo | Nullable | Notas |
+| --- | --- | --- | --- |
+| `order_id` | VARCHAR | no | dimensión degenerada |
+| `order_item_id` | BIGINT | no | |
+| `cliente_sk` | VARCHAR | no | FK `dim_cliente`: la versión de la compra, resuelta por `customer_id` |
+| `product_id` | VARCHAR | no | FK `dim_producto` |
+| `seller_id` | VARCHAR | no | FK `dim_vendedor` |
+| `estado` | VARCHAR | no | FK `dim_estado_pedido`: estado del pedido a la fecha D (ADR 0031) |
+| `fecha_compra` | DATE | no | FK `dim_tiempo` |
+| `fecha_aprobacion` | DATE | sí | FK `dim_tiempo`; nula si no ocurrió a la fecha D |
+| `fecha_despacho` | DATE | sí | ídem |
+| `fecha_entrega` | DATE | sí | ídem |
+| `fecha_entrega_estimada` | DATE | no | FK `dim_tiempo`; promesa, puede ser futura |
+| `fecha_limite_envio` | DATE | no | FK `dim_tiempo`; `shipping_limit_date`, puede ser futura (máx. 2020-04-09) |
+| `price` | DECIMAL(18,2) | no | aditiva por línea |
+| `freight_value` | DECIMAL(18,2) | no | aditiva por línea |
+| `dias_hasta_aprobacion` | DOUBLE | sí | de la compra a la aprobación, en días con fracción |
+| `dias_hasta_entrega` | DOUBLE | sí | de la compra a la entrega al cliente |
+| `dias_retraso` | DOUBLE | sí | entrega real − estimada; negativo si llegó antes |
+| `es_entrega_tardia` | BOOLEAN | sí | entrega real posterior a la estimada; nulo si no se entregó |
+| `_visible_desde` | TIMESTAMP | no | `valid_from` del último evento visible del pedido |
+
+Las fechas y medidas de proceso son del **pedido** y se repiten en cada
+línea: los KPIs por pedido se calculan sobre pedidos distintos
+(`COUNT(DISTINCT order_id)` o agregando primero por pedido). Medido en el
+diseño, por pedido entregado: 12.5 días promedio hasta la entrega y 8.1%
+de entregas tardías. Un pedido cancelado figura `cancelado` desde su
+compra (fuga aceptada, ADR 0018).
+
+**`fct_pagos`** — grano: `(order_id, payment_sequential)`. Incremental en
+modo append. **Filas:** 103,886.
+
+| Columna | Tipo | Nullable | Notas |
+| --- | --- | --- | --- |
+| `order_id` | VARCHAR | no | dimensión degenerada |
+| `payment_sequential` | BIGINT | no | |
+| `cliente_sk` | VARCHAR | no | FK `dim_cliente`, vía el pedido |
+| `fecha_compra` | DATE | no | FK `dim_tiempo` |
+| `payment_type` | VARCHAR | no | atributo degenerado (baja cardinalidad) |
+| `payment_installments` | BIGINT | no | `>= 0` |
+| `payment_value` | DECIMAL(18,2) | no | `>= 0`; la suma debe dar 16,008,872.12 en el último día |
+| `_visible_desde` | TIMESTAMP | no | compra del pedido |
+
+**`fct_reviews`** (ADR 0034) — grano: `review_id`. Incremental con merge
+por `review_id`. **Filas:** 98,410. `COUNT(*)` y `AVG(review_score)` son
+correctos sin `DISTINCT` (promedio 4.0888).
+
+| Columna | Tipo | Nullable | Notas |
+| --- | --- | --- | --- |
+| `review_id` | VARCHAR | no | PK |
+| `cliente_sk` | VARCHAR | no | FK `dim_cliente`: versión vigente a la creación; si la review es anterior a la primera versión (review adelantada, ADR 0020), la primera |
+| `fecha_creacion` | DATE | no | FK `dim_tiempo` |
+| `fecha_respuesta` | DATE | sí | FK `dim_tiempo`; nula si la respuesta es posterior a D |
+| `review_score` | BIGINT | no | en `[1, 5]` |
+| `tiene_comentario` | BOOLEAN | no | hay `review_comment_message` no vacío; el título solo no cuenta |
+| `dias_hasta_respuesta` | DOUBLE | sí | de la creación a la respuesta |
+| `_visible_desde` | TIMESTAMP | no | el mayor entre la creación, la compra de su primer pedido visible y la respuesta |
+
+**`puente_review_pedido`** (ADR 0034) — grano: `(review_id, order_id)`.
+Incremental con merge por la PK. **Filas:** 99,224.
+
+| Columna | Tipo | Nullable | Notas |
+| --- | --- | --- | --- |
+| `review_id` | VARCHAR | no | FK `fct_reviews` |
+| `order_id` | VARCHAR | no | pedido de `fct_pedidos` |
+| `_visible_desde` | TIMESTAMP | no | el mayor entre la creación de la review y la compra de ese pedido |
+
+Cruzar reviews con productos o vendedores pasa por el puente y
+`fct_pedidos`: una review cuenta en cada línea a la que llega, así que esos
+cruces exigen decidir cómo ponderar.
+
+### Metadatos de la corrida
+
+**`_gold_build`** (ADR 0028) — una fila, la de la última publicación:
+`as_of` (DATE, la fecha D), `built_at` (TIMESTAMP), `silver_built_at`
+(TIMESTAMP, del manifiesto de Silver usado), `full_refresh` (BOOLEAN) y las
+filas por mart. Responde con SQL a qué día corresponde Gold.
+
+### Implementación física de Gold (Fase 4)
+
+```text
+gold/
+├── _staging/          ← temporal de la corrida en curso (ADR 0028)
+└── warehouse.duckdb   ← se reemplaza entero al final de cada corrida exitosa
+```
+
+`uv run gold-build --dia AAAA-MM-DD [--full-refresh]` (ADR 0027): verifica
+el manifiesto de Silver (`as_of == D`) y que Gold no esté en un día
+posterior (salvo `--full-refresh`); copia `warehouse.duckdb` a
+`_staging/`; corre `dbt build` contra la copia; escribe `_gold_build`,
+hace `CHECKPOINT` y reemplaza el archivo con `os.replace`. Si algo falla,
+`warehouse.duckdb` queda como estaba.
 
 ### Diagrama ER
 
 ```mermaid
 erDiagram
-    dim_cliente ||--o{ fct_pedidos : "hace"
+    dim_cliente ||--o{ fct_pedidos : "compra (versión vigente)"
     dim_cliente ||--o{ fct_pagos : "paga"
+    dim_cliente ||--o{ fct_reviews : "opina"
     dim_producto ||--o{ fct_pedidos : "vendido en"
     dim_vendedor ||--o{ fct_pedidos : "vende"
-    dim_tiempo ||--o{ fct_pedidos : "ocurre en"
-    dim_tiempo ||--o{ fct_pagos : "ocurre en"
-    dim_estado_pedido ||--o{ fct_pedidos : "estado actual"
+    dim_estado_pedido ||--o{ fct_pedidos : "estado a la fecha D"
+    dim_tiempo ||--o{ fct_pedidos : "6 roles de fecha"
+    dim_tiempo ||--o{ fct_pagos : "fecha_compra"
+    dim_tiempo ||--o{ fct_reviews : "creación / respuesta"
+    fct_reviews ||--|{ puente_review_pedido : "se asocia a"
+    fct_pedidos }o--o{ puente_review_pedido : "order_id"
 
     dim_cliente {
-        string customer_unique_id PK
+        string cliente_sk PK
+        string customer_unique_id
         string customer_zip_code_prefix
         string customer_city
         string customer_state
+        double geolocation_lat
+        double geolocation_lng
+        timestamp valid_from
+        timestamp valid_to
+        bool is_current
     }
     dim_producto {
         string product_id PK
@@ -601,37 +791,59 @@ erDiagram
         string seller_zip_code_prefix
         string seller_city
         string seller_state
+        double geolocation_lat
+        double geolocation_lng
     }
     dim_tiempo {
         date fecha PK
         int anio
+        int trimestre
         int mes
-        int dia
-        string dia_semana
+        int dia_semana
         bool es_fin_de_semana
+        bool es_feriado
     }
     dim_estado_pedido {
-        string status_event PK
-        string descripcion
+        string estado PK
+        string categoria
+        bool es_terminal
+        int orden
     }
     fct_pedidos {
-        string order_id
-        int order_item_id
-        string customer_unique_id FK
+        string order_id PK
+        int order_item_id PK
+        string cliente_sk FK
         string product_id FK
         string seller_id FK
+        string estado FK
         date fecha_compra FK
-        string status_event FK
-        float price
-        float freight_value
+        date fecha_entrega FK
+        date fecha_entrega_estimada FK
+        decimal price
+        decimal freight_value
+        double dias_hasta_entrega
+        bool es_entrega_tardia
     }
     fct_pagos {
-        string order_id
-        int payment_sequential
-        string customer_unique_id FK
+        string order_id PK
+        int payment_sequential PK
+        string cliente_sk FK
         date fecha_compra FK
         string payment_type
-        float payment_value
+        decimal payment_value
         int payment_installments
+    }
+    fct_reviews {
+        string review_id PK
+        string cliente_sk FK
+        date fecha_creacion FK
+        date fecha_respuesta FK
+        int review_score
+        bool tiene_comentario
+        double dias_hasta_respuesta
+    }
+    puente_review_pedido {
+        string review_id PK
+        string order_id PK
     }
 ```
