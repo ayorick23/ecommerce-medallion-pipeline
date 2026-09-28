@@ -713,7 +713,9 @@ correctos sin `DISTINCT` (promedio 4.0888).
 | `fecha_creacion` | DATE | no | FK `dim_tiempo` |
 | `fecha_respuesta` | DATE | sí | FK `dim_tiempo`; nula si la respuesta es posterior a D |
 | `review_score` | BIGINT | no | en `[1, 5]` |
-| `tiene_comentario` | BOOLEAN | no | hay `review_comment_message` no vacío; el título solo no cuenta |
+| `review_comment_title` | VARCHAR | sí | tal cual Silver (portugués, sin normalizar) |
+| `review_comment_message` | VARCHAR | sí | ídem; puede traer saltos de línea |
+| `tiene_comentario` | BOOLEAN | no | hay `review_comment_message` no vacío; el título solo no cuenta (1,721 reviews tienen título sin mensaje) |
 | `dias_hasta_respuesta` | DOUBLE | sí | de la creación a la respuesta |
 | `_visible_desde` | TIMESTAMP | no | el mayor entre la creación, la compra de su primer pedido visible y la respuesta |
 
@@ -839,6 +841,8 @@ erDiagram
         date fecha_creacion FK
         date fecha_respuesta FK
         int review_score
+        string review_comment_title
+        string review_comment_message
         bool tiene_comentario
         double dias_hasta_respuesta
     }

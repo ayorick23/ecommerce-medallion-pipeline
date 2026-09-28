@@ -21,7 +21,10 @@ de 4.0888 (sección 3 de `docs/schemas.md`).
     mientras no hay respuesta a la fecha D).
   - FKs: `fecha_creacion` y `fecha_respuesta` a `dim_tiempo`, y
     `cliente_sk`.
-  - Los textos de los comentarios no pasan a Gold: se quedan en Silver.
+  - Textos: `review_comment_title` y `review_comment_message` como
+    atributos de la fila, **tal cual vienen de Silver** (sin pasar a
+    minúsculas, sin quitar acentos ni stopwords). Con el grano en
+    `review_id` hay un solo texto por fila, así que no se duplica nada.
 - **`puente_review_pedido`**, con una fila por vínculo `(review_id,
   order_id)` (99,224), para llegar desde una review a sus pedidos (y desde
   ahí a productos y vendedores).
@@ -46,6 +49,18 @@ de 4.0888 (sección 3 de `docs/schemas.md`).
 - **`cliente_sk` resuelto por el pedido**, como en `fct_pedidos`: con
   varios pedidos por review no hay un pedido único del cual tomarlo, y la
   review ocurre en su propia fecha.
+- **Textos solo en Silver**, aplicando la regla general de que los hechos
+  llevan medidas y claves, no texto libre: esa regla evita duplicar texto
+  en hechos de grano más fino, y aquí el grano es la review misma. Además
+  obligaría a quien consume a salir de Gold hacia los Parquet de Silver,
+  que no son parte del contrato de consumo (ADR 0026).
+- **Textos en una `dim_review_texto`**, con relación 1:1 con
+  `review_id`: es la solución de manual para texto, pero una dimensión 1:1
+  con su hecho suma un join sin aportar nada.
+- **Sentimiento u otro procesamiento del texto en Gold:** requiere un
+  modelo de lenguaje; es un producto derivado (ML) que consume Gold, no
+  transformación de datos. Queda para un proyecto posterior del
+  portafolio.
 
 ## Por qué
 
@@ -53,6 +68,12 @@ Con el grano en `review_id`, **las agregaciones por defecto son
 correctas**: `COUNT(*)` y `AVG(review_score)` sobre `fct_reviews` dan 98,410
 y 4.0888 sin trucos. El muchos a muchos queda aislado en el puente, que es
 el patrón estándar de Kimball (*bridge table*) para esa relación.
+
+Los textos son la única voz del cliente en Olist, y el análisis de texto
+(frecuencia de términos, nubes de palabras, sentimiento) es un uso típico
+de este dataset. Tenerlos en Gold, junto al score, deja ese análisis al
+alcance de BI sin salir de la capa de consumo. En DuckDB cada columna se
+guarda por separado, así que quien no pide el texto no paga por él.
 
 ## Consecuencias
 
@@ -65,4 +86,7 @@ el patrón estándar de Kimball (*bridge table*) para esa relación.
   pertenecen a la misma persona (medido: se cumple en las 98,410).
 - `tiene_comentario` mira solo el mensaje, no el título: las 1,721 reviews
   con título pero sin mensaje cuentan como sin comentario. Los 9 mensajes
-  vacíos tampoco cuentan.
+  vacíos tampoco cuentan. Los títulos siguen disponibles en su propia
+  columna para quien quiera analizarlos.
+- La limpieza del texto (minúsculas, acentos, stopwords en portugués)
+  depende de cada análisis y la hace quien consume; Gold no la impone.
