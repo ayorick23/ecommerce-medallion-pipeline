@@ -54,6 +54,17 @@ with
 
     ),
 
+    candidatas as (
+
+        -- En incremental se filtra antes de los joins con dim_cliente, no después.
+        select *
+        from reviews
+        {% if is_incremental() %}
+            where _visible_desde > (select max(_visible_desde) from {{ this }})
+        {% endif %}
+
+    ),
+
     primeras_versiones as (
 
         select distinct customer_unique_id, cliente_sk
@@ -76,13 +87,13 @@ select
     date_diff('second', r.review_creation_date, r.review_answer_timestamp)
     / 86400.0 as dias_hasta_respuesta,
     r._visible_desde
-from reviews as r
+from candidatas as r
+-- valid_to nulo va con coalesce y no con "is null or": un OR en la condición
+-- impide el hash join por persona y DuckDB cae en un nested loop (23 s frente
+-- a 0.4 s sobre Olist completo).
 left join
     {{ ref('dim_cliente') }} as v
     on r.customer_unique_id = v.customer_unique_id
     and r.review_creation_date >= v.valid_from
-    and (v.valid_to is null or r.review_creation_date < v.valid_to)
+    and r.review_creation_date < coalesce(v.valid_to, cast('9999-12-31' as timestamp))
 left join primeras_versiones as pv on r.customer_unique_id = pv.customer_unique_id
-{% if is_incremental() %}
-    where r._visible_desde > (select max(_visible_desde) from {{ this }})
-{% endif %}

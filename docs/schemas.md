@@ -735,24 +735,32 @@ cruces exigen decidir cómo ponderar.
 ### Metadatos de la corrida
 
 **`_gold_build`** (ADR 0028) — una fila, la de la última publicación:
-`as_of` (DATE, la fecha D), `built_at` (TIMESTAMP), `silver_built_at`
-(TIMESTAMP, del manifiesto de Silver usado), `full_refresh` (BOOLEAN) y las
-filas por mart. Responde con SQL a qué día corresponde Gold.
+`as_of` (DATE, la fecha D), `built_at` (TIMESTAMP en UTC),
+`silver_built_at` (TIMESTAMP en UTC, del manifiesto de Silver usado),
+`full_refresh` (BOOLEAN) y `filas` (`MAP(VARCHAR, BIGINT)`, filas por
+mart: `filas['fct_pedidos']`). Responde con SQL a qué día corresponde Gold.
+Un Gold escrito con `gold-dbt` (desarrollo) no la actualiza.
 
 ### Implementación física de Gold (Fase 4)
 
 ```text
 gold/
-├── _staging/          ← temporal de la corrida en curso (ADR 0028)
-└── warehouse.duckdb   ← se reemplaza entero al final de cada corrida exitosa
+├── _staging/build/warehouse.duckdb   ← temporal de la corrida en curso (ADR 0028)
+└── warehouse.duckdb                  ← se reemplaza entero al final de cada corrida exitosa
 ```
 
 `uv run gold-build --dia AAAA-MM-DD [--full-refresh]` (ADR 0027): verifica
 el manifiesto de Silver (`as_of == D`) y que Gold no esté en un día
-posterior (salvo `--full-refresh`); copia `warehouse.duckdb` a
-`_staging/`; corre `dbt build` contra la copia; escribe `_gold_build`,
-hace `CHECKPOINT` y reemplaza el archivo con `os.replace`. Si algo falla,
+posterior (salvo `--full-refresh`); copia `warehouse.duckdb` al temporal,
+que se llama igual para que el catálogo de DuckDB (y con él las vistas)
+coincida; corre `dbt build` contra la copia; escribe `_gold_build`, hace
+`CHECKPOINT` y reemplaza el archivo con `os.replace`. Si algo falla,
 `warehouse.duckdb` queda como estaba.
+
+Medido sobre Silver al 2018-10-17: `gold-build` tarda ~20 s (full refresh
+o incremental; ~10 s son de `dbt build`) y Gold pesa ~45 MB. `uv run
+gold-dbt <args>` corre dbt con las mismas rutas pero directo sobre
+`warehouse.duckdb`, sin guardas: es para desarrollo.
 
 ### Diagrama ER
 
