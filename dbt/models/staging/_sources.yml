@@ -1,0 +1,23 @@
+sources:
+  - name: silver
+    description: >
+      Silver(D) en Parquet, un archivo por tabla (ADR 0024). La ruta llega por
+      MEDALLION_SILVER_URI, que define gold-build / gold-dbt (ADR 0027). Silver
+      ya viene validado con Pandera (ADR 0023): aquí no se repiten sus tests.
+    config:
+      external_location: "read_parquet('{{ env_var('MEDALLION_SILVER_URI') }}/{name}/part-0.parquet')"
+    tables:
+      - name: orders
+        description: Una fila por pedido; eventos futuros a D en nulo (ADR 0018).
+      - name: order_status_history
+        description: SCD2 de estados del pedido (ADR 0019).
+      - name: order_items
+      - name: order_payments
+      - name: order_reviews
+        description: Una fila por vínculo review–pedido (ADR 0021).
+      - name: customers
+        description: Referencia sin enmascarar; conoce clientes de compras futuras.
+      - name: products
+      - name: sellers
+      - name: geolocation_agg
+        description: Coordenadas promedio por código postal (ADR 0025).
