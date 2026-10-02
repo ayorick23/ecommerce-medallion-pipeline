@@ -25,9 +25,7 @@ with
             e.ultimo_evento_at
         from {{ ref('stg_orders') }} as o
         inner join {{ ref('int_pedido_estado') }} as e on o.order_id = e.order_id
-        {% if is_incremental() %}
-            where e.ultimo_evento_at > (select max(_visible_desde) from {{ this }})
-        {% endif %}
+        {% if is_incremental() %} where e.ultimo_evento_at > {{ marca_de_agua() }} {% endif %}
 
     )
 
