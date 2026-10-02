@@ -8,3 +8,8 @@ medallion:
       type: duckdb
       path: "{{ env_var('MEDALLION_GOLD_DB') }}"
       threads: 4
+      # dbt-duckdb deja la conexión abierta entre invocaciones por defecto. Con
+      # eso, el temporal publicado con os.replace seguiría abierto (y bloqueado
+      # en Windows), y otro gold-build en el mismo proceso reusaría la conexión
+      # y escribiría sobre el Gold publicado, no sobre la copia (ADR 0028).
+      keep_open: false
