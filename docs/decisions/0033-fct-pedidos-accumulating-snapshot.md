@@ -1,6 +1,8 @@
 # 0033 — `fct_pedidos` como accumulating snapshot con fechas role-playing
 
-**Estado:** Aceptada
+**Estado:** Aceptada — parcialmente superada por
+[0037](0037-entrega-tardia-por-dia-calendario.md) (`dias_retraso` y
+`es_entrega_tardia` se miden en días calendario)
 **Fecha:** 2026-09-28
 
 ## Contexto

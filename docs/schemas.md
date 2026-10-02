@@ -677,14 +677,15 @@ PK (ADR 0029). **Filas:** 112,650 en el último día.
 | `freight_value` | DECIMAL(18,2) | no | aditiva por línea |
 | `dias_hasta_aprobacion` | DOUBLE | sí | de la compra a la aprobación, en días con fracción |
 | `dias_hasta_entrega` | DOUBLE | sí | de la compra a la entrega al cliente |
-| `dias_retraso` | DOUBLE | sí | entrega real − estimada; negativo si llegó antes |
-| `es_entrega_tardia` | BOOLEAN | sí | entrega real posterior a la estimada; nulo si no se entregó |
+| `dias_retraso` | BIGINT | sí | días calendario de la fecha estimada a la de entrega: 0 si llegó el día prometido, negativo si antes (ADR 0037) |
+| `es_entrega_tardia` | BOOLEAN | sí | `dias_retraso > 0`; llegar el día prometido no es tarde (ADR 0037); nulo si no se entregó |
 | `_visible_desde` | TIMESTAMP | no | `valid_from` del último evento visible del pedido |
 
 Las fechas y medidas de proceso son del **pedido** y se repiten en cada
 línea: los KPIs por pedido se calculan sobre pedidos distintos
 (`COUNT(DISTINCT order_id)` o agregando primero por pedido). Por pedido
-entregado: 12.56 días promedio hasta la entrega y 8.1% de entregas tardías;
+entregado: 12.56 días promedio hasta la entrega y 6.8% de entregas tardías
+(por día calendario, ADR 0037);
 promediando fila por fila daría 12.47. Un pedido cancelado figura `cancelado` desde su
 compra (fuga aceptada, ADR 0018).
 

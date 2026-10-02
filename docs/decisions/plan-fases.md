@@ -182,7 +182,8 @@ sources, tests, docs y linaje), estrategias de materialización y carga
     0030).
   - Estado del pedido combinado, con 6 estados (ADR 0031).
   - Calendario fijo 2016–2020 con feriados (ADR 0032).
-  - `fct_pedidos` es un accumulating snapshot (ADR 0033).
+  - `fct_pedidos` es un accumulating snapshot (ADR 0033), con la entrega
+    tardía medida por día calendario (ADR 0037).
   - `fct_reviews` con una tabla puente a los pedidos (ADR 0034).
   - Coordenadas como atributos (ADR 0035).
 - **Tests:** `dbt_utils`, contratos en los marts, unit tests de dbt y un
@@ -228,7 +229,8 @@ Contrato completo en `docs/schemas.md`, sección 6.
     - Sumas de `price`, `freight_value` y `payment_value` idénticas a
       Silver.
     - Los KPIs medidos en el diseño se reproducen (12.56 días promedio
-      por pedido, 8.1% de entregas tardías, score promedio de 4.0888).
+      por pedido, 6.8% de entregas tardías por día calendario (ADR 0037),
+      score promedio de 4.0888).
     - Tiempo de full refresh, tiempo por día incremental y tamaño del
       `.duckdb`, medidos.
 11. **Cierre:**
@@ -372,7 +374,8 @@ Cada decisión de diseño no trivial vive como archivo independiente en
 | [0030](0030-dim-cliente-scd2-persona-clave-hash.md) | `dim_cliente` como SCD2 de persona, con `cliente_sk` como hash | Aceptada |
 | [0031](0031-estado-pedido-combinado-dim-estado-pedido.md) | Estado del pedido combinado y `dim_estado_pedido` con 6 estados | Aceptada |
 | [0032](0032-dim-tiempo-calendario-fijo-feriados.md) | `dim_tiempo`: calendario fijo 2016–2020 con feriados | Aceptada |
-| [0033](0033-fct-pedidos-accumulating-snapshot.md) | `fct_pedidos` como accumulating snapshot | Aceptada |
+| [0033](0033-fct-pedidos-accumulating-snapshot.md) | `fct_pedidos` como accumulating snapshot | Aceptada — parcialmente superada por 0037 (entrega tardía) |
 | [0034](0034-reviews-fct-reviews-puente-pedidos.md) | Reviews: `fct_reviews` más una tabla puente | Aceptada |
 | [0035](0035-coordenadas-atributos-sin-dim-ubicacion.md) | Coordenadas como atributos, sin `dim_ubicacion` | Aceptada |
 | [0036](0036-gold-estrategia-de-tests.md) | Estrategia de tests de Gold | Aceptada |
+| [0037](0037-entrega-tardia-por-dia-calendario.md) | Entrega tardía y retraso medidos en días calendario | Aceptada |

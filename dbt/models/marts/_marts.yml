@@ -341,11 +341,15 @@ models:
         data_tests:
           - dbt_utils.accepted_range: *no_negativo
       - name: dias_retraso
-        data_type: double
-        description: Entrega real menos estimada, en días; negativo si llegó antes.
+        data_type: bigint
+        description: >-
+          Días calendario de la fecha estimada a la de entrega (ADR 0037): 0 si llegó
+          el día prometido, negativo si llegó antes; del pedido.
       - name: es_entrega_tardia
         data_type: boolean
-        description: Entrega real posterior a la estimada; nulo si no se entregó.
+        description: >-
+          La fecha de entrega es posterior a la estimada, es decir dias_retraso > 0
+          (ADR 0037); nulo si no se entregó.
       - name: _visible_desde
         data_type: timestamp
         description: Marca de agua técnica (ADR 0029); no es una medida.

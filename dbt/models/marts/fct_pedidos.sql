@@ -50,9 +50,15 @@ select
     / 86400.0 as dias_hasta_aprobacion,
     date_diff('second', p.order_purchase_timestamp, p.order_delivered_customer_date)
     / 86400.0 as dias_hasta_entrega,
-    date_diff('second', p.order_estimated_delivery_date, p.order_delivered_customer_date)
-    / 86400.0 as dias_retraso,
-    p.order_delivered_customer_date > p.order_estimated_delivery_date as es_entrega_tardia,
+    -- La promesa es un día (la estimada viene siempre a las 00:00): el retraso
+    -- se mide en días calendario y llegar el día prometido no es tarde (ADR 0037).
+    date_diff(
+        'day',
+        cast(p.order_estimated_delivery_date as date),
+        cast(p.order_delivered_customer_date as date)
+    ) as dias_retraso,
+    cast(p.order_delivered_customer_date as date)
+    > cast(p.order_estimated_delivery_date as date) as es_entrega_tardia,
     p.ultimo_evento_at as _visible_desde
 from {{ ref('stg_order_items') }} as i
 inner join pedidos as p on i.order_id = p.order_id
