@@ -1,7 +1,9 @@
 # 0027 — dbt se ejecuta a través de `gold-build` / `gold-dbt`: rutas por `env_var` y verificación del manifiesto de Silver
 
 **Estado:** Aceptada — supera parcialmente a la 0007 (cómo el DAG invoca a
-dbt y dónde viven los tests de Gold)
+dbt y dónde viven los tests de Gold); parcialmente superada por
+[0037](0037-dbt-en-proceso-hijo.md) (dbt en un proceso hijo en lugar de
+`dbtRunner`)
 **Fecha:** 2026-09-28
 
 ## Contexto
