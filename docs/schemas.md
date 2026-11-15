@@ -757,10 +757,32 @@ coincida; corre `dbt build` contra la copia; escribe `_gold_build`, hace
 `CHECKPOINT` y reemplaza el archivo con `os.replace`. Si algo falla,
 `warehouse.duckdb` queda como estaba.
 
-Medido sobre Silver al 2018-10-17: `gold-build` tarda ~20 s (full refresh
-o incremental; ~10 s son de `dbt build`) y Gold pesa ~45 MB. `uv run
-gold-dbt <args>` corre dbt con las mismas rutas pero directo sobre
-`warehouse.duckdb`, sin guardas: es para desarrollo.
+dbt corre en un proceso hijo (ADR 0037). `uv run gold-dbt <args>` corre
+dbt con las mismas rutas pero directo sobre `warehouse.duckdb`, sin
+guardas: es para desarrollo.
+
+**Corrida real verificada (2026-11-15):** sobre Silver al 2018-10-17,
+`gold-build --full-refresh` tarda 12.7 s y el incremental del mismo día
+10.4 s; Gold pesa 44 MB. Conciliado contra Silver:
+
+- Conteos: 112,650 líneas en `fct_pedidos`, 103,886 pagos, 98,410 reviews
+  y 99,224 filas en el puente.
+- Sumas idénticas al centavo: `price` 13,591,643.70, `freight_value`
+  2,251,909.54 y `payment_value` 16,008,872.12.
+- KPIs del diseño, por pedido entregado (96,470): 12.56 días promedio a la
+  entrega y 8.1% de entregas tardías; score promedio de 4.0888.
+
+**Ventana real** (`scripts/gold_ventana_real.py --desde 2018-01-01 --dias
+30`): full refresh al 2018-01-01, 30 días incrementales y comparación
+contra un full refresh al 2018-01-31 con `compare_warehouses` (todas las
+tablas, esquema y filas como multiconjunto). Resultado: **todas las tablas
+iguales**. Silver tarda ~1.4 s por día; Gold, 9.9 s por día incremental y
+9.2 s el full refresh, con un `.duckdb` de 20 MB. A este volumen el
+incremental no ahorra tiempo: domina el costo fijo de dbt (arranque,
+parseo y los 97 tests y 11 unit tests), no la cantidad de filas.
+
+`gold-dbt docs generate` corre sin errores, con cada modelo y columna de
+los marts documentados.
 
 ### Diagrama ER
 
