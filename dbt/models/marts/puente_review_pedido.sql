@@ -16,7 +16,5 @@ select
 from {{ ref('stg_order_reviews') }} as r
 inner join {{ ref('stg_orders') }} as o on r.order_id = o.order_id
 {% if is_incremental() %}
-    where
-        greatest(r.review_creation_date, o.order_purchase_timestamp)
-        > (select max(_visible_desde) from {{ this }})
+    where greatest(r.review_creation_date, o.order_purchase_timestamp) > {{ marca_de_agua() }}
 {% endif %}

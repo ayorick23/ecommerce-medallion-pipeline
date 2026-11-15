@@ -45,7 +45,7 @@ Un e-commerce recibe cada día pedidos, pagos y reseñas, y cada pedido cambia d
 - ✅ **Simula la llegada diaria de los datos:** un replay recorre los 774 días del dataset; cada pedido "llega" de nuevo cada día en que cambia de estado (ADR 0004).
 - ✅ **Bronze:** guarda por día una copia fiel de lo que llegó (todo como texto, sin corregir nada), particionada por `dia_simulado`, con linaje por fila (`ingested_at`, `source_file`, `batch_hash`). Reprocesar un día reemplaza su partición de forma atómica: nunca duplica ni deja archivos a medio escribir.
 - ✅ **Silver:** reconstruye "a la fecha D" una foto limpia y tipada de todo lo que se sabía al cierre de ese día, **sin filtrar información del futuro** (ADR 0017, 0018). Incluye el historial de estados de cada pedido como SCD2 (una versión vigente por instante, aun con timestamps de la fuente fuera de orden, ADR 0019), montos exactos en `Decimal(18,2)` y reviews que llegan antes que su pedido esperando con un plazo de gracia (ADR 0020). Todo se valida con Pandera y chequeos de FK antes de escribir: ante cualquier violación, una sola `SilverValidationError` con todas las fallas y **nada escrito** (ADR 0023).
-- 🔜 **Gold** (Fase 4): star schema (`fct_pedidos`, `fct_pagos`, `dim_*`) construido con dbt sobre DuckDB, con las reglas de calidad como tests de dbt.
+- ✅ **Gold:** star schema en DuckDB construido con dbt (`fct_pedidos`, `fct_pagos`, `fct_reviews` con su tabla puente, y `dim_cliente` SCD2, `dim_producto`, `dim_vendedor`, `dim_tiempo`, `dim_estado_pedido`). Dimensiones completas y hechos incrementales con marca de agua (ADR 0029), contratos en los marts, 97 tests de datos y 11 unit tests de dbt. Se construye sobre una copia y se publica de forma atómica: si un test falla, Gold queda como estaba (ADR 0028). Probado que el incremental día a día es idéntico al full refresh (ADR 0036).
 - 🔜 **Orquestación** (Fase 5): DAGs de Airflow que envuelven las funciones de cada capa, con reintentos y manejo de fallos.
 
 ## Qué no hace (por diseño)
@@ -104,13 +104,15 @@ ecommerce-medallion-pipeline/
 │   ├── common/            # configuración externalizada, escritura atómica
 │   ├── bronze/            # ruteo por día, linaje, batch_hash, replay
 │   ├── silver/            # tipos, SCD2, enmascarado a la fecha D, Pandera, silver-build
-│   └── gold/              # (Fase 4)
+│   └── gold/              # gold-build / gold-dbt: invocan dbt, publican Gold atómicamente
+├── dbt/                   # proyecto dbt: staging → intermediate → marts, seeds, tests
 ├── tests/
 │   ├── unit/              # espejo de las capas de src/medallion/
-│   └── integration/       # flujos completos (CSV → Bronze → Silver) y propiedades por día
+│   └── integration/       # flujos completos (CSV → Bronze → Silver → Gold) y propiedades por día
 ├── config/                # pipeline.yaml: almacenamiento, archivos fuente, plazo de gracia
 ├── dags/                  # DAGs de Airflow (Fase 5)
 ├── data/                  # raw/ bronze/ silver/ gold/ — fuera de git
+├── scripts/               # gold_ventana_real.py: incremental vs full refresh sobre datos reales
 ├── notebooks/             # solo exploración (no forma parte del pipeline)
 ├── docs/
 │   ├── schemas.md         # contratos de datos de las 3 capas
@@ -212,12 +214,35 @@ duckdb.sql("select sum(payment_value) from 'data/silver/order_payments/part-0.pa
 
 **Silver en números** (último día, verificado contra la fuente): 99,441 pedidos, 392,856 eventos de estado en el SCD2, 112,650 items, 103,886 pagos, 99,224 reviews y 5 tablas de referencia; 31 MB, 0 fallas de validación, y reconstruir el mismo día da archivos idénticos byte a byte. Contratos completos en [`docs/schemas.md`](docs/schemas.md), secciones 3 a 5.
 
+### Construir Gold
+
+Con Silver construido al mismo día D:
+
+```bash
+uv run gold-dbt deps                          # una vez por clon: paquetes de dbt (dbt_utils)
+
+uv run gold-build --dia 2018-10-17            # incremental desde el Gold anterior
+uv run gold-build --dia 2018-10-17 --full-refresh   # desde cero (obligatorio para ir hacia atrás)
+uv run gold-dbt docs generate                 # documentación y linaje de dbt
+```
+
+`gold-build` verifica que el manifiesto de Silver sea del día D, corre `dbt build` (modelos, tests y unit tests) sobre una copia de `data/gold/warehouse.duckdb` y solo la publica si todo pasa. `gold-dbt` pasa cualquier comando a dbt con las rutas de `pipeline.yaml`, sin guardas: es para desarrollo.
+
+```sql
+-- data/gold/warehouse.duckdb
+select as_of, built_at, full_refresh from _gold_build;   -- a qué día corresponde Gold
+select estado, count(distinct order_id) as pedidos from fct_pedidos group by estado;
+```
+
+**Gold en números** (último día, conciliado contra Silver): 112,650 líneas de pedido, 103,886 pagos, 98,410 reviews y 99,224 vínculos review–pedido; sumas de `price`, `freight_value` y `payment_value` idénticas al centavo; 12.56 días promedio a la entrega, 8.1% de entregas tardías y score promedio de 4.0888. Contrato completo en [`docs/schemas.md`](docs/schemas.md), sección 6.
+
 ### Tests y calidad de código
 
 ```bash
 uv run pytest                 # suite completa (unit + integration)
 uv run ruff check .           # lint
 uv run ruff format --check .  # formato
+uv run sqlfmt --check dbt     # formato del SQL de dbt
 uv run mypy src tests         # type-check (strict)
 
 uv run pre-commit install     # una vez por clon: corre ruff y mypy antes de cada commit

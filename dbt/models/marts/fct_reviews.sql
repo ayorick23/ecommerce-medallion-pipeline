@@ -59,9 +59,7 @@ with
         -- En incremental se filtra antes de los joins con dim_cliente, no después.
         select *
         from reviews
-        {% if is_incremental() %}
-            where _visible_desde > (select max(_visible_desde) from {{ this }})
-        {% endif %}
+        {% if is_incremental() %} where _visible_desde > {{ marca_de_agua() }} {% endif %}
 
     ),
 

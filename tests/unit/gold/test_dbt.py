@@ -1,4 +1,6 @@
 import os
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -8,6 +10,7 @@ from medallion.common.config import PipelineConfig
 from medallion.common.storage import StorageError
 from medallion.gold import dbt
 from medallion.gold.dbt import (
+    DBT_ENTRY_POINT,
     DBT_PROJECT_DIR,
     GOLD_DB_ENV,
     SILVER_URI_ENV,
@@ -45,50 +48,56 @@ def test_remote_root_is_an_error() -> None:
         warehouse_path(_config("abfs://lake@cuenta.dfs.core.windows.net"))
 
 
-class _FakeRunner:
-    calls: list[list[str]] = []
-    env_seen: dict[str, str | None] = {}
+class _FakeRun:
+    """Reemplaza ``subprocess.run``: registra el comando y el entorno del hijo."""
 
-    def invoke(self, args: list[str]) -> Any:
-        _FakeRunner.calls.append(args)
-        _FakeRunner.env_seen = {k: os.environ.get(k) for k in (SILVER_URI_ENV, GOLD_DB_ENV)}
-        return type("Result", (), {"success": args[0] != "falla"})()
+    def __init__(self) -> None:
+        self.commands: list[list[str]] = []
+        self.envs: list[dict[str, str]] = []
+
+    def __call__(self, command: list[str], env: dict[str, str], check: bool) -> Any:
+        self.commands.append(command)
+        self.envs.append(env)
+        return subprocess.CompletedProcess(command, 1 if "falla" in command else 0)
 
 
 @pytest.fixture
-def fake_runner(monkeypatch: pytest.MonkeyPatch) -> type[_FakeRunner]:
-    import dbt.cli.main
-
-    _FakeRunner.calls = []
-    monkeypatch.setattr(dbt.cli.main, "dbtRunner", _FakeRunner)
+def fake_run(monkeypatch: pytest.MonkeyPatch) -> _FakeRun:
+    fake = _FakeRun()
+    monkeypatch.setattr(subprocess, "run", fake)
     monkeypatch.delenv(SILVER_URI_ENV, raising=False)
     monkeypatch.delenv(GOLD_DB_ENV, raising=False)
-    return _FakeRunner
+    return fake
 
 
-def test_run_dbt_sets_env_and_points_to_project(fake_runner: type[_FakeRunner]) -> None:
+def test_run_dbt_runs_dbt_in_a_child_process(fake_run: _FakeRun) -> None:
     env = {SILVER_URI_ENV: "/s", GOLD_DB_ENV: "/g.duckdb"}
 
     assert run_dbt(["build", "-s", "dim_cliente"], env) is True
 
     project = str(DBT_PROJECT_DIR.resolve())
-    assert fake_runner.calls == [
-        ["build", "-s", "dim_cliente", "--project-dir", project, "--profiles-dir", project]
+    assert fake_run.commands == [
+        [sys.executable, "-c", DBT_ENTRY_POINT, "build", "-s", "dim_cliente"]
+        + ["--project-dir", project, "--profiles-dir", project]
     ]
-    assert fake_runner.env_seen == env
+    child_env = fake_run.envs[0]
+    assert {k: child_env[k] for k in env} == env
+    assert child_env["PATH"] == os.environ["PATH"]  # hereda el resto del entorno
 
 
-def test_run_dbt_overrides_existing_env(
-    fake_runner: type[_FakeRunner], monkeypatch: pytest.MonkeyPatch
+def test_run_dbt_overrides_existing_env_only_in_the_child(
+    fake_run: _FakeRun, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv(SILVER_URI_ENV, "/puesta/a/mano")
 
     run_dbt(["run"], {SILVER_URI_ENV: "/de/la/config", GOLD_DB_ENV: "/g.duckdb"})
 
-    assert fake_runner.env_seen[SILVER_URI_ENV] == "/de/la/config"
+    assert fake_run.envs[0][SILVER_URI_ENV] == "/de/la/config"
+    assert os.environ[SILVER_URI_ENV] == "/puesta/a/mano"
+    assert GOLD_DB_ENV not in os.environ
 
 
-def test_run_dbt_reports_failure(fake_runner: type[_FakeRunner]) -> None:
+def test_run_dbt_reports_failure(fake_run: _FakeRun) -> None:
     assert run_dbt(["falla"], {SILVER_URI_ENV: "/s", GOLD_DB_ENV: "/g"}) is False
 
 

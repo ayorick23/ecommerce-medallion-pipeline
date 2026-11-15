@@ -239,6 +239,26 @@ Contrato completo en `docs/schemas.md`, sección 6.
     - ADRs escritas, `schemas.md` actualizado, README y apuntes de la
       fase.
 
+**Cerrada (2026-11-15):** los 11 puntos se cumplieron. El fixture de
+Gold (`tests/integration/gold/`) recorre 12 días con incremental y full
+refresh en cada uno, y la ventana real compara ambos sobre Olist completo
+(`scripts/gold_ventana_real.py`). Corrida real y ventana en
+`docs/schemas.md`, sección 6 ("Corrida real verificada").
+
+Lo que encontraron las pruebas con dbt real, que los tests con un dbt
+simulado no podían ver:
+
+- **dbt en el mismo proceso:** dbt-duckdb deja `warehouse.duckdb` abierto
+  después de `dbtRunner`, y un segundo `gold_build` en el mismo proceso no
+  podía abrirlo. dbt pasó a correr en un proceso hijo (ADR 0037).
+- **Marca de agua sobre una tabla vacía:** si un hecho incremental quedaba
+  vacío el primer día (una review que espera a su pedido), `max()` daba
+  `NULL`, `x > NULL` nunca es verdadero, y el hecho no volvía a cargar nada.
+  Se corrigió con la macro `marca_de_agua()` (`coalesce` a una fecha
+  mínima), que implementa la ADR 0029 sin cambiar la decisión.
+
+La CI pasó de ~20 s a ~6.5 min: cada `gold_build` del fixture corre dbt.
+
 ---
 
 ### Fase 5 — Orquestación completa con Airflow
@@ -366,7 +386,7 @@ Cada decisión de diseño no trivial vive como archivo independiente en
 | [0024](0024-silver-escritura-manifiesto.md) | Escritura de Silver: un archivo por tabla y un manifiesto | Aceptada |
 | [0025](0025-geolocalizacion-descartar-coordenadas-fuera-de-brasil.md) | Geolocalización: descartar coordenadas fuera de Brasil | Aceptada |
 | [0026](0026-gold-proyecto-dbt-capas-dependencias.md) | Proyecto dbt de Gold: ubicación, capas y dependencias | Aceptada |
-| [0027](0027-gold-dbt-via-comando-env-var-manifiesto.md) | dbt vía `gold-build` / `gold-dbt`: rutas por `env_var` y manifiesto de Silver | Aceptada |
+| [0027](0027-gold-dbt-via-comando-env-var-manifiesto.md) | dbt vía `gold-build` / `gold-dbt`: rutas por `env_var` y manifiesto de Silver | Aceptada — parcialmente superada por 0037 (invocación de dbt) |
 | [0028](0028-gold-escritura-atomica-copia-reemplazo.md) | Escritura atómica de Gold: copia y reemplazo del archivo | Aceptada |
 | [0029](0029-gold-materializacion-dims-completas-hechos-incrementales.md) | Materialización: dimensiones completas, hechos incrementales | Aceptada |
 | [0030](0030-dim-cliente-scd2-persona-clave-hash.md) | `dim_cliente` como SCD2 de persona, con `cliente_sk` como hash | Aceptada |
@@ -376,3 +396,4 @@ Cada decisión de diseño no trivial vive como archivo independiente en
 | [0034](0034-reviews-fct-reviews-puente-pedidos.md) | Reviews: `fct_reviews` más una tabla puente | Aceptada |
 | [0035](0035-coordenadas-atributos-sin-dim-ubicacion.md) | Coordenadas como atributos, sin `dim_ubicacion` | Aceptada |
 | [0036](0036-gold-estrategia-de-tests.md) | Estrategia de tests de Gold | Aceptada |
+| [0037](0037-dbt-en-proceso-hijo.md) | dbt en un proceso hijo, no con `dbtRunner` | Aceptada |

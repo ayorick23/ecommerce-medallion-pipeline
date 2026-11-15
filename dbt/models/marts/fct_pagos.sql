@@ -21,6 +21,4 @@ select
 from {{ ref('stg_order_payments') }} as p
 inner join {{ ref('stg_orders') }} as o on p.order_id = o.order_id
 left join {{ ref('int_cliente_direcciones') }} as c on o.customer_id = c.customer_id
-{% if is_incremental() %}
-    where o.order_purchase_timestamp > (select max(_visible_desde) from {{ this }})
-{% endif %}
+{% if is_incremental() %} where o.order_purchase_timestamp > {{ marca_de_agua() }} {% endif %}
