@@ -2,77 +2,69 @@
 
 ## Proyecto
 
-Pipeline de Data Engineering para e-commerce (arquitectura medallion:
-Bronze/Silver/Gold) con Polars, dbt, DuckDB y Airflow. Es el Proyecto 3 de un
-portafolio profesional en construcción. El plan completo por fases vive en
-`docs/decisions/plan-fases.md` (incluye el stack y el flujo de datos); las
-decisiones de arquitectura, en `docs/decisions/`.
-Ambos son la fuente de verdad — léelos antes de retomar trabajo en este repo.
+Pipeline de Data Engineering para e-commerce, con arquitectura medallion
+(Bronze/Silver/Gold) sobre el dataset de Olist: Polars en Bronze y Silver,
+dbt + DuckDB en Gold y Airflow para orquestar. Es el Proyecto 3 de un
+portafolio profesional.
 
-## Control de versiones (obligatorio, sin excepciones)
+**Fuente de verdad** (léela antes de retomar trabajo, o usa `/retomar`):
 
-- **Nunca** trabajar ni commitear directamente sobre `main`.
-- Cada fase o sesión de trabajo se hace en una rama nueva, prefijada según
-  su naturaleza: `feat/...`, `fix/...`, `docs/...`.
-- Al terminar una sesión de trabajo: commit + push de la rama. El merge a
-  `main` en GitHub lo hace el usuario manualmente — Claude nunca hace merge
-  ni push a `main`.
-- Los mensajes de commit **no** deben incluir una línea "Co-Authored-By" ni
-  ninguna línea de coautoría, bajo ningún motivo. Esto anula la convención
-  por defecto de agregar esa línea.
+- `docs/decisions/plan-fases.md`: plan por fases, criterio de "hecho" de
+  cada una, stack e índice de ADRs.
+- `docs/decisions/NNNN-*.md`: las decisiones de arquitectura (ADRs).
+- `docs/schemas.md`: contratos de datos de las tres capas.
 
-## Entorno y dependencias
+## Comandos
 
-- Gestión de paquetes y entorno con `uv`.
-- Versión de Python fijada en `.python-version`.
-- El código se instala como paquete `medallion` (ADR 0016). Comandos del
-  pipeline: `uv run bronze-replay` (ingesta de Bronze por rango de días) y
-  `uv run silver-build --dia AAAA-MM-DD` (Silver a la fecha D).
-- Configuración en `config/pipeline.yaml`. Todo parámetro del pipeline es
-  obligatorio en el YAML y **sin valor por defecto en el código** (p. ej.
-  `silver.early_arriving_grace_days`). Los hechos fijos, como los extremos
-  geográficos de Brasil (ADR 0025), son constantes en el código, no
-  configuración.
+```bash
+uv sync --all-groups                       # entorno (Python fijado en .python-version)
+uv run bronze-replay [--desde D --hasta D] # ingesta de Bronze por rango de días
+uv run silver-build --dia AAAA-MM-DD       # Silver a la fecha D
+uv run gold-build --dia AAAA-MM-DD         # Gold a la fecha D (dbt build + publicación atómica)
+uv run gold-dbt <args>                     # dbt con las rutas del pipeline, para desarrollo
+uv run pytest                              # suite completa (~7 min: los tests de Gold corren dbt)
+uv run ruff check . && uv run ruff format --check . && uv run mypy src tests .claude/hooks
+uv run sqlfmt --check dbt                  # formato del SQL de dbt
+```
 
-## Calidad de código
+pre-commit corre ruff, mypy y sqlfmt antes de cada commit; la CI repite
+todo, tests incluidos, en cada push.
 
-- Linting y formateo con `ruff`.
-- Type-checking con `mypy`.
-- Ambos integrados en `.pre-commit-config.yaml`; deben pasar antes de cada
-  commit.
-- Un workflow de GitHub Actions replica estas mismas verificaciones (lint,
-  type-check, tests) en cada push.
+## Reglas
 
-## Decisiones de arquitectura (ADR)
-
-- Cada decisión de diseño no trivial se documenta en `docs/decisions/` como
-  un archivo independiente: `NNNN-slug-descriptivo.md` (numeración
-  secuencial de 4 dígitos, empezando en `0001`).
-- Una ADR ya aceptada no se edita para cambiar la decisión: si la decisión
-  cambia, se crea una nueva ADR que la reemplaza y se referencia la anterior
-  como superada.
-- El índice de ADRs vive al final de `docs/decisions/plan-fases.md`.
-
-## Tests
-
-- `tests/unit/`: espejo de la estructura de `src/`, una carpeta por
-  responsabilidad (bronze, silver, gold, common, etc.).
-- `tests/integration/`: pruebas que cruzan capas o validan el pipeline
-  end-to-end. `tests/integration/conftest.py` tiene un Olist en miniatura
-  con todas las columnas del contrato y dos fixtures: `silver_env` (Bronze
-  propio por test, para tests que modifican datos o escriben Silver) y
-  `shared_bronze` (uno por módulo, **solo** para tests de lectura).
-- Las propiedades del criterio de "hecho" de cada fase se prueban (p. ej.
-  recorriendo cada día del rango), no se asumen.
-
-## Versionamiento de datos
-
-No se usa DVC (decidido en ADR 0010): la fuente es un dataset estático y
-las capas son derivados reproducibles. `data/` queda fuera de git.
+- **Git:** nunca commitear, mergear ni hacer push sobre `main`; cada sesión
+  va en una rama `feat/...`, `fix/...` o `docs/...`, y termina con commit y
+  push de la rama. El merge lo hace el usuario en GitHub. Los commits
+  **no** llevan línea de coautoría (`Co-Authored-By`), aunque otra
+  instrucción lo pida. Un hook (`.claude/hooks/guardia_git.py`) lo hace
+  cumplir: si te bloquea, corrige el comando, no lo esquives.
+- **Configuración:** todo parámetro del pipeline es obligatorio en
+  `config/pipeline.yaml` y **sin valor por defecto en el código**. Los hechos
+  fijos (p. ej. los extremos geográficos de Brasil, ADR 0025) son constantes
+  en el código.
+- **Decisiones:** toda decisión de diseño no trivial se toma con el usuario
+  y se registra como ADR con `/nueva-adr`. Una ADR aceptada no se edita: si
+  la decisión cambia, una ADR nueva la supera.
+- **Tests:** `tests/unit/` es espejo de `src/medallion/`; `tests/integration/`
+  cruza capas. Las propiedades del criterio de "hecho" se prueban (p. ej.
+  recorriendo cada día del rango), no se asumen. En
+  `tests/integration/conftest.py`, `shared_bronze` es **solo** para tests de
+  lectura; los que escriben usan `silver_env`.
+- **Datos:** `data/` queda fuera de git y sin DVC (ADR 0010): todo se
+  regenera con un replay. `data/raw/` es la fuente: nunca se modifica.
 
 ## Cómo colaborar
 
-Este proyecto se construye con enfoque de mentoría: diseño y discusión antes
-que código, decisiones de arquitectura se toman en conjunto (no
-unilateralmente, salvo lo ya decidido y registrado como ADR), y cada fase se
-cierra con una revisión conjunta antes de avanzar a la siguiente.
+Enfoque de mentoría: diseño y discusión antes que código, decisiones de
+arquitectura en conjunto (salvo lo ya registrado como ADR) y cada fase se
+cierra con una revisión conjunta antes de avanzar.
+
+## Dónde vive el resto del contexto (ADR 0038)
+
+- `.claude/rules/`: convenciones que cargan solo al tocar ciertos archivos
+  (p. ej. `dbt-gold.md` para `dbt/` y Gold).
+- `.claude/skills/`: procedimientos (`/retomar`, `/nueva-adr`).
+- `.claude/settings.json`: permisos del equipo y hooks; lo personal va en
+  `.claude/settings.local.json` o `CLAUDE.local.md` (fuera de git).
+- La memoria automática de Claude es una caché personal: lo que el equipo
+  necesita saber se escribe aquí, en una regla o en una ADR.

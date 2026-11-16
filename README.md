@@ -117,6 +117,7 @@ ecommerce-medallion-pipeline/
 ├── docs/
 │   ├── schemas.md         # contratos de datos de las 3 capas
 │   └── decisions/         # plan por fases y ADRs
+├── .claude/               # contexto de Claude Code: reglas, skills, permisos y hooks (ADR 0038)
 ├── .github/workflows/     # CI
 ├── docker-compose.yml     # Airflow (LocalExecutor) + Postgres
 ├── pyproject.toml
@@ -243,7 +244,7 @@ uv run pytest                 # suite completa (unit + integration)
 uv run ruff check .           # lint
 uv run ruff format --check .  # formato
 uv run sqlfmt --check dbt     # formato del SQL de dbt
-uv run mypy src tests         # type-check (strict)
+uv run mypy src tests .claude/hooks  # type-check (strict)
 
 uv run pre-commit install     # una vez por clon: corre ruff y mypy antes de cada commit
 ```

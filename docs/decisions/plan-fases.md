@@ -397,3 +397,4 @@ Cada decisión de diseño no trivial vive como archivo independiente en
 | [0035](0035-coordenadas-atributos-sin-dim-ubicacion.md) | Coordenadas como atributos, sin `dim_ubicacion` | Aceptada |
 | [0036](0036-gold-estrategia-de-tests.md) | Estrategia de tests de Gold | Aceptada |
 | [0037](0037-dbt-en-proceso-hijo.md) | dbt en un proceso hijo, no con `dbtRunner` | Aceptada |
+| [0038](0038-contexto-de-agentes-ia.md) | Contexto para agentes de IA: qué carga siempre, qué bajo demanda y qué se hace cumplir | Aceptada |
