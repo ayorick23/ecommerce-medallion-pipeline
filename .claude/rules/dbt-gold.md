@@ -50,6 +50,8 @@ porqué de cada punto están en la ADR citada; aquí va lo que no hay que romper
   `(customer_unique_id, valid_from)`; los hechos apuntan a la versión vigente
   a su fecha (ADR 0030). Intervalos semiabiertos `[valid_from, valid_to)`.
 - Estado del pedido: solo los 6 de `dim_estado_pedido` (ADR 0031).
+- Comparar contra una fecha sin hora (p. ej. la entrega estimada, siempre a
+  las 00:00) se hace por día calendario, no por timestamp (ADR 0039).
 - Fechas que son promesas (`fecha_entrega_estimada`, `fecha_limite_envio`)
   son las únicas que pueden ser posteriores a D.
 - `dim_tiempo` es un calendario fijo con los límites de `dbt_project.yml`

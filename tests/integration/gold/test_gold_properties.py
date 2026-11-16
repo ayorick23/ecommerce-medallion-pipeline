@@ -93,9 +93,14 @@ def test_fixture_cases_reach_gold(walk: Walk) -> None:
         "g5": "aprobado",  # processing
         "g6": "no_disponible",
         "g7": "entregado",
+        "g9": "entregado",
     }
     assert _query(db, "select count(*) from dim_cliente where customer_unique_id = 'u1'") == [(3,)]
     assert _query(db, "select order_id from fct_pedidos where es_entrega_tardia") == [("g2",)]
+    # Entregado a las 23:00 del día prometido: no es tarde (ADR 0039).
+    assert _query(
+        db, "select dias_retraso, es_entrega_tardia from fct_pedidos where order_id = 'g9'"
+    ) == [(0, False)]
     assert _query(db, "select count(*) from fct_reviews") == [(4,)]
     assert _query(db, "select count(*) from puente_review_pedido") == [(5,)]
 
