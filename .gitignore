@@ -36,3 +36,7 @@ dbt/target/
 dbt/logs/
 dbt/dbt_packages/
 dbt/.user.yml
+
+# Claude Code (ADR 0038): lo personal no se versiona; .claude/settings.json sí
+CLAUDE.local.md
+.claude/settings.local.json

@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(uv run pytest *)",
+      "Bash(uv run ruff *)",
+      "Bash(uv run mypy *)",
+      "Bash(uv run sqlfmt *)",
+      "Bash(uv run pre-commit run *)",
+      "Bash(uv run bronze-replay *)",
+      "Bash(uv run silver-build *)",
+      "Bash(uv run gold-build *)",
+      "Bash(uv run gold-dbt *)",
+      "Bash(uv sync *)",
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git branch *)"
+    ],
+    "ask": [
+      "Bash(git reset --hard *)",
+      "Bash(git clean *)",
+      "Bash(git rebase *)"
+    ],
+    "deny": [
+      "Bash(git push --force *)",
+      "Bash(git push -f *)",
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Edit(/data/raw/**)",
+      "Write(/data/raw/**)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(git *)",
+            "command": "uv",
+            "args": ["run", "--no-project", "python", "${CLAUDE_PROJECT_DIR}/.claude/hooks/guardia_git.py"],
+            "timeout": 30
+          }
+        ]
+      },
+      {
+        "matcher": "PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv",
+            "args": ["run", "--no-project", "python", "${CLAUDE_PROJECT_DIR}/.claude/hooks/guardia_git.py"],
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
