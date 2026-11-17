@@ -8,6 +8,8 @@ Este reusa ``write_sources`` con otras fuentes. Cada caso apunta a una ADR:
   versiones de ``dim_cliente``, y volver a una dirección vieja es versión
   nueva (ADR 0030).
 - ``g2``: entrega tardía (ADR 0033).
+- ``g9``: entregado a las 23:00 del día prometido; no es tardío, porque la
+  promesa es un día (ADR 0039).
 - ``g3``: cancelado después de entregado; gana la cancelación (ADR 0031).
 - ``g4`` ``invoiced``, ``g5`` ``processing`` y ``g6`` ``unavailable`` (ADR 0031).
 - ``g7``: despachado antes de aprobarse; el SCD2 ajusta ``valid_from``, que
@@ -61,7 +63,9 @@ GOLD_CSV = {
     "g6,c6,unavailable,2017-04-06 10:00:00,2017-04-06 10:30:00,,,2017-04-26 00:00:00\n"
     "g7,c7,delivered,2017-04-08 08:00:00,2017-04-09 12:00:00,2017-04-09 09:00:00,"
     "2017-04-11 10:00:00,2017-04-22 00:00:00\n"
-    "g8,c8,canceled,2017-04-08 15:00:00,,,,2017-04-28 00:00:00\n",
+    "g8,c8,canceled,2017-04-08 15:00:00,,,,2017-04-28 00:00:00\n"
+    "g9,c9,delivered,2017-04-04 08:00:00,2017-04-04 09:00:00,2017-04-05 10:00:00,"
+    "2017-04-10 23:00:00,2017-04-10 00:00:00\n",
     "order_items": (
         "order_id,order_item_id,product_id,seller_id,shipping_limit_date,price,freight_value\n"
         "g1,1,p1,s1,2017-04-05 00:00:00,10.50,5.00\n"
@@ -73,6 +77,7 @@ GOLD_CSV = {
         "g6,1,p1,s1,2017-04-09 00:00:00,50.00,8.00\n"
         "g7,1,p1,s1,2017-04-10 00:00:00,12.00,3.00\n"
         "g7,2,p1,s1,2017-04-10 00:00:00,12.00,3.00\n"
+        "g9,1,p2,s1,2017-04-07 00:00:00,5.00,1.50\n"
     ),
     "order_payments": (
         "order_id,payment_sequential,payment_type,payment_installments,payment_value\n"
@@ -85,6 +90,7 @@ GOLD_CSV = {
         "g6,1,boleto,1,58.00\n"
         "g7,1,credit_card,4,30.00\n"
         "g8,1,credit_card,1,0.00\n"
+        "g9,1,boleto,1,6.50\n"
     ),
     "order_reviews": _REVIEWS_HEADER
     + "rg1,g1,5,,muito bom,2017-04-07 00:00:00,2017-04-09 10:00:00\n"
@@ -102,6 +108,7 @@ GOLD_CSV = {
         "c6,u4,22041,rio de janeiro,RJ\n"
         "c7,u5,77410,gurupi,TO\n"
         "c8,u6,01151,sao paulo,SP\n"
+        "c9,u7,77410,gurupi,TO\n"
     ),
     "geolocation": (
         "geolocation_zip_code_prefix,geolocation_lat,geolocation_lng,geolocation_city,"

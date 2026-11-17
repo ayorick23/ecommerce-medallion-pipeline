@@ -235,7 +235,7 @@ select as_of, built_at, full_refresh from _gold_build;   -- a qué día correspo
 select estado, count(distinct order_id) as pedidos from fct_pedidos group by estado;
 ```
 
-**Gold en números** (último día, conciliado contra Silver): 112,650 líneas de pedido, 103,886 pagos, 98,410 reviews y 99,224 vínculos review–pedido; sumas de `price`, `freight_value` y `payment_value` idénticas al centavo; 12.56 días promedio a la entrega, 8.1% de entregas tardías y score promedio de 4.0888. Contrato completo en [`docs/schemas.md`](docs/schemas.md), sección 6.
+**Gold en números** (último día, conciliado contra Silver): 112,650 líneas de pedido, 103,886 pagos, 98,410 reviews y 99,224 vínculos review–pedido; sumas de `price`, `freight_value` y `payment_value` idénticas al centavo; 12.56 días promedio a la entrega, 6.8% de entregas tardías (por día calendario, ADR 0039) y score promedio de 4.0888. Contrato completo en [`docs/schemas.md`](docs/schemas.md), sección 6.
 
 ### Tests y calidad de código
 
