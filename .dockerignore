@@ -1,0 +1,14 @@
+# Solo lo que el Dockerfile copia: el resto agranda el contexto de build o
+# filtraría datos y secretos a la imagen.
+*
+!pyproject.toml
+!uv.lock
+!.python-version
+!README.md
+!src/
+!dbt/
+!config/
+dbt/target/
+dbt/logs/
+dbt/dbt_packages/
+**/__pycache__/

@@ -20,6 +20,11 @@ class Outcome(Enum):
     RETRY = "retry"  # inesperado: excepción normal, Airflow reintenta
 
 
+def pipeline_python(home: str) -> str:
+    """El Python del venv que ``uv sync`` deja en la raíz del pipeline (imagen Linux)."""
+    return f"{home.rstrip('/')}/.venv/bin/python"
+
+
 def layer_command(python: str, layer: str, dia: str) -> list[str]:
     if layer not in LAYERS:
         raise ValueError(f"capa desconocida: {layer!r}")

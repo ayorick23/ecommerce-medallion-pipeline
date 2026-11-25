@@ -9,7 +9,7 @@ from medallion.common.config import load_config
 from medallion_dag.config import (
     ALERT_EMAIL_ENV,
     ALERTS_ENABLED_ENV,
-    PIPELINE_PYTHON_ENV,
+    PIPELINE_HOME_ENV,
     SMTP_ENVS,
     OrchestrationConfigError,
     load_orchestration_config,
@@ -27,7 +27,7 @@ orchestration:
   alerts:
     enabled: {enabled}
 """
-BASE_ENV = {PIPELINE_PYTHON_ENV: "/opt/medallion/.venv/bin/python"}
+BASE_ENV = {PIPELINE_HOME_ENV: "/opt/medallion"}
 SECRETS = {name: "x" for name in (ALERT_EMAIL_ENV, *SMTP_ENVS)} | {
     ALERT_EMAIL_ENV: "yo@example.com"
 }
@@ -47,7 +47,7 @@ def test_loads_section(tmp_path: Path) -> None:
     assert config.retry_delay == timedelta(minutes=5)
     assert config.alerts_enabled is False
     assert config.alert_email is None
-    assert config.pipeline_python == BASE_ENV[PIPELINE_PYTHON_ENV]
+    assert config.pipeline_home == BASE_ENV[PIPELINE_HOME_ENV]
 
 
 def test_repo_config_has_alerts_disabled() -> None:
@@ -141,7 +141,7 @@ def test_alerts_without_a_secret_fail(tmp_path: Path, missing: str) -> None:
         load_orchestration_config(path, secrets)
 
 
-def test_pipeline_python_is_required(tmp_path: Path) -> None:
+def test_pipeline_home_is_required(tmp_path: Path) -> None:
     path = _write(tmp_path, SECTION.format(enabled="false"))
-    with pytest.raises(OrchestrationConfigError, match=PIPELINE_PYTHON_ENV):
+    with pytest.raises(OrchestrationConfigError, match=PIPELINE_HOME_ENV):
         load_orchestration_config(path, {})

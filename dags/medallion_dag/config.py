@@ -19,9 +19,10 @@ DEFAULT_CONFIG_PATH: Final = Path("config/pipeline.yaml")
 CONFIG_PATH_ENV: Final = "PIPELINE_CONFIG"
 ALERTS_ENABLED_ENV: Final = "PIPELINE_ALERTS_ENABLED"
 ALERT_EMAIL_ENV: Final = "PIPELINE_ALERT_EMAIL"
-# Intérprete del venv del pipeline (ADR 0041). Lo define la imagen: es dónde
-# quedó instalado, no un parámetro del pipeline.
-PIPELINE_PYTHON_ENV: Final = "PIPELINE_PYTHON"
+# Raíz del proyecto del pipeline dentro de la imagen (ADR 0041): ahí están su
+# venv (.venv), dbt/ y config/, y es el directorio de trabajo del proceso. La
+# define la imagen: es dónde quedó instalado, no un parámetro del pipeline.
+PIPELINE_HOME_ENV: Final = "PIPELINE_HOME"
 # Lo que Airflow necesita para mandar correo. Si faltara alguno, Airflow usaría
 # su valor por defecto (localhost:25) y la alerta fallaría el día que haga falta.
 SMTP_ENVS: Final = (
@@ -46,7 +47,7 @@ class OrchestrationConfig:
     alerts_enabled: bool
     # Solo con las alertas activas; viene de .env, nunca del YAML versionado.
     alert_email: str | None
-    pipeline_python: str
+    pipeline_home: str
 
 
 def _int_at_least(section: Mapping[str, Any], key: str, minimum: int) -> int:
@@ -111,10 +112,10 @@ def load_orchestration_config(
     delay = _int_at_least(section, "retry_delay_minutes", 1)
     alerts_enabled = _alerts_enabled(section, env)
 
-    pipeline_python = env.get(PIPELINE_PYTHON_ENV)
-    if not pipeline_python:
+    pipeline_home = env.get(PIPELINE_HOME_ENV)
+    if not pipeline_home:
         raise OrchestrationConfigError(
-            f"Falta {PIPELINE_PYTHON_ENV}: el Python del venv del pipeline (ADR 0041)"
+            f"Falta {PIPELINE_HOME_ENV}: la raíz del pipeline en la imagen (ADR 0041)"
         )
 
     alert_email = None
@@ -133,5 +134,5 @@ def load_orchestration_config(
         retry_delay=timedelta(minutes=delay),
         alerts_enabled=alerts_enabled,
         alert_email=alert_email,
-        pipeline_python=pipeline_python,
+        pipeline_home=pipeline_home,
     )

@@ -41,3 +41,20 @@ jobs:
 
       - name: Tests (pytest)
         run: uv run pytest
+
+  # El DAG en Airflow real: Airflow no está en el venv de uv (ADR 0041), así
+  # que esto corre dentro de la imagen del compose.
+  airflow:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Construir la imagen (Dockerfile)
+        run: docker compose build
+
+      - name: DAG, aislamiento y alertas en Airflow real
+        run: >-
+          docker run --rm -e CONNECTION_CHECK_MAX_COUNT=0
+          -v "$PWD/dags:/opt/airflow/dags"
+          -v "$PWD/tests/airflow:/checks"
+          medallion-airflow:local python /checks/check_dag.py

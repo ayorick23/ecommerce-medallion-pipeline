@@ -1,5 +1,15 @@
+# Imagen propia: Airflow + el pipeline en un venv aparte (Dockerfile, ADR 0041).
+# El código del pipeline (src/, dbt/) va dentro de la imagen: después de
+# cambiarlo, `docker compose build`. dags/, config/ y data/ se montan.
 x-airflow-common: &airflow-common
-  image: apache/airflow:2.10.4-python3.12
+  build: .
+  image: medallion-airflow:local
+  user: "${AIRFLOW_UID:-50000}:0"
+  # Secretos de cada despliegue (alertas, ADR 0042). Opcional: sin .env, todo
+  # funciona con las alertas apagadas.
+  env_file:
+    - path: .env
+      required: false
   environment: &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
@@ -7,10 +17,11 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
   volumes:
     - ./dags:/opt/airflow/dags
-    - ./src:/opt/airflow/src
-    - ./config:/opt/airflow/config
-    - ./data:/opt/airflow/data
     - ./logs:/opt/airflow/logs
+    # El pipeline corre desde /opt/medallion, como desde la raíz del repo: el
+    # storage.root relativo (./data) cae en el data/ del repo.
+    - ./config:/opt/medallion/config
+    - ./data:/opt/medallion/data
   depends_on:
     postgres:
       condition: service_healthy

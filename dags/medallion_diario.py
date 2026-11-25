@@ -17,7 +17,14 @@ from airflow.operators.python import PythonOperator
 from airflow.utils.email import send_email
 
 from medallion_dag.config import OrchestrationConfig, load_orchestration_config
-from medallion_dag.contract import LAYERS, Outcome, alert_message, layer_command, outcome
+from medallion_dag.contract import (
+    LAYERS,
+    Outcome,
+    alert_message,
+    layer_command,
+    outcome,
+    pipeline_python,
+)
 
 log = logging.getLogger(__name__)
 
@@ -25,14 +32,18 @@ log = logging.getLogger(__name__)
 CONFIG = load_orchestration_config()
 
 
-def run_layer(layer: str, dia: str, python: str) -> None:
-    """Corre una capa para un día en el venv del pipeline y traduce su código de salida."""
-    command = layer_command(python, layer, dia)
+def run_layer(layer: str, dia: str, home: str) -> None:
+    """Corre una capa para un día en el venv del pipeline y traduce su código de salida.
+
+    El proceso corre desde la raíz del pipeline, como en el repo: dbt/ y las
+    rutas relativas de pipeline.yaml se resuelven desde ahí.
+    """
+    command = layer_command(pipeline_python(home), layer, dia)
     log.info("Ejecutando: %s", " ".join(command))
     # La salida se pasa al log de la task línea a línea: el proceso hijo escribe
     # en su propio stdout, que Airflow no captura solo.
     with subprocess.Popen(
-        command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+        command, cwd=home, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
     ) as process:
         assert process.stdout is not None
         for line in process.stdout:
@@ -87,7 +98,7 @@ with DAG(
         PythonOperator(
             task_id=layer,
             python_callable=run_layer,
-            op_kwargs={"layer": layer, "dia": "{{ ds }}", "python": CONFIG.pipeline_python},
+            op_kwargs={"layer": layer, "dia": "{{ ds }}", "home": CONFIG.pipeline_home},
         )
         for layer in LAYERS
     ]

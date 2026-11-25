@@ -26,7 +26,9 @@
       "Bash(git push --force *)",
       "Bash(git push -f *)",
       "Read(./.env)",
-      "Read(./.env.*)",
+      "Read(./.env.local)",
+      "Read(./.env.*.local)",
+      "Read(./.env.production)",
       "Edit(/data/raw/**)",
       "Write(/data/raw/**)"
     ]

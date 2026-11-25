@@ -8,6 +8,7 @@ from medallion_dag.contract import (
     alert_message,
     layer_command,
     outcome,
+    pipeline_python,
 )
 
 
@@ -42,6 +43,11 @@ def test_layer_command() -> None:
         "gold",
         "2017-03-10",
     ]
+
+
+@pytest.mark.parametrize("home", ["/opt/medallion", "/opt/medallion/"])
+def test_pipeline_python(home: str) -> None:
+    assert pipeline_python(home) == "/opt/medallion/.venv/bin/python"
 
 
 def test_unknown_layer_is_rejected() -> None:
