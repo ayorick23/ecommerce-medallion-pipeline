@@ -55,9 +55,14 @@ def test_repo_config_has_alerts_disabled() -> None:
     assert load_orchestration_config(REPO_CONFIG, BASE_ENV).alerts_enabled is False
 
 
-@pytest.mark.skipif(
-    not (REPO_ROOT / "data" / "raw").is_dir(), reason="sin el dataset de Olist en data/raw"
-)
+def _olist_available() -> bool:
+    # data/raw/ existe siempre (tiene un .gitkeep versionado); lo que falta en la CI
+    # son los CSV, que no se versionan (ADR 0010).
+    config = load_config(REPO_CONFIG)
+    return all((REPO_ROOT / "data" / "raw" / name).is_file() for name in config.sources.values())
+
+
+@pytest.mark.skipif(not _olist_available(), reason="sin el dataset de Olist en data/raw")
 def test_repo_dates_match_source_range() -> None:
     # Las fechas del calendario se escriben a mano (el DAG no puede leer los CSV
     # al parsearse, ADR 0040): este test avisa si se desfasan de la fuente.
