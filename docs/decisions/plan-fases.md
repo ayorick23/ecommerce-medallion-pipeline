@@ -23,9 +23,10 @@ pedagógico, no solo un checklist técnico.
    implementan como funciones Python puras con Polars (reciben datos,
    devuelven datos), testeables con pytest sin levantar Airflow; Gold se
    implementa como un proyecto dbt sobre DuckDB (ADR 0007). Airflow solo
-   orquesta — los `PythonOperator`/`@task` son envoltorios delgados que
-   llaman a esas funciones o a `gold-build`, que envuelve `dbt build` (ADR
-   0027). Esto es estándar en la industria
+   orquesta — los `@task` son envoltorios delgados que lanzan, en un venv
+   aparte del de Airflow, un punto de entrada de `src/` que llama a esas
+   funciones o a `gold-build`, que envuelve `dbt build` (ADR 0027, 0041).
+   Esto es estándar en la industria
    porque permite testear la lógica de negocio en segundos, no en minutos
    con un scheduler corriendo.
 3. **Fail-fast real.** Ninguna capa avanza a la siguiente si la validación
@@ -275,6 +276,52 @@ Airflow, y serializar las escrituras a `warehouse.duckdb` (un solo escritor
 backfill. Si seguimos el principio de desacoplar lógica (ver principio #2),
 esta fase es "conectar", no "reescribir".
 
+**Diseño cerrado (2026-11-25):**
+
+- **Calendario:** un DAG `medallion_diario`, `bronze(D) → silver(D) →
+  gold(D)`, `@daily` con `catchup` entre `orchestration.start_date` y
+  `end_date` de `pipeline.yaml`. Volver a correr un día pasado rebobina y
+  vuelve a avanzar (*Clear + Future*), con full refresh automático de Gold
+  cuando D no es posterior a su `as_of` (ADR 0040).
+- **Orden y un solo escritor:** `max_active_runs=1`, `depends_on_past` y
+  `wait_for_downstream`. Un fallo detiene el calendario. Con Airflow
+  activo, Airflow es el único escritor de su `storage.root` (ADR 0040).
+- **Aislamiento:** imagen propia con el pipeline en un venv aparte,
+  instalado con `uv sync --locked`. Las tasks lanzan un punto de entrada
+  de `src/` y el DAG no importa `medallion` (ADR 0041).
+- **Fallos:** contrato por código de salida, 0 éxito, 3 determinista (sin
+  reintento) y cualquier otro con reintentos. `retries` y
+  `retry_delay_minutes` en `pipeline.yaml` (ADR 0041).
+- **Sensores y alertas:** sin sensores. Correo por SMTP al fallar
+  definitivamente, activado por despliegue con un flag más secretos en
+  `.env` (ADR 0042).
+
+**Criterio de "hecho":** propiedades probadas, no asumidas:
+
+1. **Imagen:** imagen propia con el pipeline en un venv instalado con `uv
+   sync --locked`, separado del entorno de Airflow; el compose la usa.
+2. **DAG:** `medallion_diario` con `@daily`, `catchup`, `bronze → silver
+   → gold`, `max_active_runs=1`, `depends_on_past` y `wait_for_downstream`.
+3. **Contrato de fallos:** códigos 0/3/otro, con `AirflowFailException`
+   para el 3. Reintentos, fechas y alertas en `pipeline.yaml`, sin valores
+   por defecto, y fechas verificadas contra `source_day_range()`.
+4. **Full refresh automático** de Gold cuando D no es posterior a su
+   `as_of`, probado con pytest sin Airflow.
+5. **Cada corrida deja el pipeline en su día:** después de cada corrida D
+   de un rango, Silver y Gold tienen `as_of = D`.
+6. **Fallos probados:** un fallo determinista no se reintenta y detiene
+   los días siguientes; uno transitorio sí se reintenta.
+7. **Rebobinar:** *Clear + Future* de un día pasado deja Gold igual que
+   una corrida limpia hasta el mismo día.
+8. **Alertas:** con las alertas activas, un fallo definitivo envía un
+   correo (probado con un SMTP simulado). Con las alertas activas y un
+   secreto faltante, el DAG no carga. Desactivadas, no se envía nada.
+9. **Replay completo** de Olist con catchup, registrado en `docs/`
+   (duración y resultado).
+10. **Cierre:** CI en verde, incluido un job dentro de la imagen
+    (`DagBag` y `airflow dags test`). ADRs, `plan-fases.md`, `.env.example`
+    y README actualizados.
+
 ---
 
 ### Fase 6 — Testing automatizado
@@ -362,7 +409,7 @@ Cada decisión de diseño no trivial vive como archivo independiente en
 | # | Título | Estado |
 | --- | --- | --- |
 | [0001](0001-fail-fast-hard-stop-total.md) | Semántica de fail-fast: hard stop total | Aceptada |
-| [0002](0002-desacople-logica-transformacion-airflow.md) | Desacoplar la lógica de transformación de Airflow | Aceptada — parcialmente superada por 0007 (Gold) |
+| [0002](0002-desacople-logica-transformacion-airflow.md) | Desacoplar la lógica de transformación de Airflow | Aceptada — parcialmente superada por 0007 (Gold) y 0041 (invocación desde el DAG) |
 | [0003](0003-alcance-fail-fast-normalizacion-vs-hard-stop.md) | Alcance del fail-fast: violaciones estructurales vs. normalización | Aceptada — parcialmente superada por 0021 (ejemplo de reviews) |
 | [0004](0004-bronze-append-only-reemision-por-evento.md) | Bronze append-only con re-emisión por evento | Aceptada |
 | [0005](0005-almacenamiento-por-capa-parquet-duckdb.md) | Almacenamiento por capa: Parquet en Bronze/Silver, DuckDB en Gold | Aceptada |
@@ -400,3 +447,6 @@ Cada decisión de diseño no trivial vive como archivo independiente en
 | [0037](0037-dbt-en-proceso-hijo.md) | dbt en un proceso hijo, no con `dbtRunner` | Aceptada |
 | [0038](0038-contexto-de-agentes-ia.md) | Contexto para agentes de IA: qué carga siempre, qué bajo demanda y qué se hace cumplir | Aceptada |
 | [0039](0039-entrega-tardia-por-dia-calendario.md) | Entrega tardía y retraso medidos en días calendario | Aceptada |
+| [0040](0040-airflow-calendario-diario-y-reproceso.md) | Airflow como calendario diario: una corrida por día y reproceso hacia adelante | Aceptada |
+| [0041](0041-airflow-venv-aislado-contrato-codigos-salida.md) | Pipeline en un venv aparte de Airflow, con un contrato por código de salida | Aceptada |
+| [0042](0042-airflow-sin-sensores-alertas-por-correo.md) | Sin sensores; alertas por correo activadas por despliegue | Aceptada |
