@@ -19,6 +19,9 @@ DEFAULT_CONFIG_PATH: Final = Path("config/pipeline.yaml")
 CONFIG_PATH_ENV: Final = "PIPELINE_CONFIG"
 ALERTS_ENABLED_ENV: Final = "PIPELINE_ALERTS_ENABLED"
 ALERT_EMAIL_ENV: Final = "PIPELINE_ALERT_EMAIL"
+# Intérprete del venv del pipeline (ADR 0041). Lo define la imagen: es dónde
+# quedó instalado, no un parámetro del pipeline.
+PIPELINE_PYTHON_ENV: Final = "PIPELINE_PYTHON"
 # Lo que Airflow necesita para mandar correo. Si faltara alguno, Airflow usaría
 # su valor por defecto (localhost:25) y la alerta fallaría el día que haga falta.
 SMTP_ENVS: Final = (
@@ -43,6 +46,7 @@ class OrchestrationConfig:
     alerts_enabled: bool
     # Solo con las alertas activas; viene de .env, nunca del YAML versionado.
     alert_email: str | None
+    pipeline_python: str
 
 
 def _int_at_least(section: Mapping[str, Any], key: str, minimum: int) -> int:
@@ -82,7 +86,7 @@ def _alerts_enabled(section: Mapping[str, Any], environ: Mapping[str, str]) -> b
 def load_orchestration_config(
     path: str | Path | None = None, environ: Mapping[str, str] | None = None
 ) -> OrchestrationConfig:
-    """Lee y valida ``orchestration``; con las alertas activas, exige sus secretos.
+    """Lee y valida ``orchestration``, el venv del pipeline y, si hay alertas, sus secretos.
 
     Ruta: argumento ``path`` → ``PIPELINE_CONFIG`` → ``config/pipeline.yaml``,
     igual que ``medallion.common.config.load_config``.
@@ -107,6 +111,12 @@ def load_orchestration_config(
     delay = _int_at_least(section, "retry_delay_minutes", 1)
     alerts_enabled = _alerts_enabled(section, env)
 
+    pipeline_python = env.get(PIPELINE_PYTHON_ENV)
+    if not pipeline_python:
+        raise OrchestrationConfigError(
+            f"Falta {PIPELINE_PYTHON_ENV}: el Python del venv del pipeline (ADR 0041)"
+        )
+
     alert_email = None
     if alerts_enabled:
         missing = [name for name in (ALERT_EMAIL_ENV, *SMTP_ENVS) if not env.get(name)]
@@ -123,4 +133,5 @@ def load_orchestration_config(
         retry_delay=timedelta(minutes=delay),
         alerts_enabled=alerts_enabled,
         alert_email=alert_email,
+        pipeline_python=pipeline_python,
     )

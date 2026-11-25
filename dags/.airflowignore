@@ -1,0 +1,2 @@
+# Módulos auxiliares del DAG, no DAGs: Airflow no los parsea en cada ciclo.
+medallion_dag/
