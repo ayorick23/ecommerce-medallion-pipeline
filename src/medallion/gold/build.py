@@ -7,7 +7,8 @@ Uso, desde la raíz del repo::
 Verifica que Silver esté completo y sea de D, construye Gold con ``dbt build``
 sobre una copia de ``warehouse.duckdb`` y, solo si todo pasa, la publica
 reemplazando el archivo. Si algo falla, Gold queda exactamente como estaba. En
-la Fase 5 Airflow llama a este comando, no a ``dbt build`` directo.
+la Fase 5 Airflow llega a ``gold_build`` a través de ``medallion.orchestration``
+(ADR 0041), nunca a ``dbt build`` directo.
 """
 
 import argparse

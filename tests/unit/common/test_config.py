@@ -87,6 +87,7 @@ def test_repo_config_declares_all_olist_sources() -> None:
         BASE + "silver:\n  early_arriving_grace_days: 120.5\n",
         BASE + "silver:\n  early_arriving_grace_days: true\n",
         BASE + "silver: 120\n",
+        "storage: [sin cerrar\n",
     ],
     ids=[
         "raiz-no-mapeo",
@@ -99,6 +100,7 @@ def test_repo_config_declares_all_olist_sources() -> None:
         "plazo-decimal",
         "plazo-booleano",
         "silver-no-mapeo",
+        "yaml-mal-formado",
     ],
 )
 def test_invalid_config_raises(tmp_path: Path, content: str) -> None:

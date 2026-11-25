@@ -60,7 +60,11 @@ def load_config(path: str | Path | None = None) -> PipelineConfig:
     if not config_path.is_file():
         raise ConfigError(f"No existe el archivo de configuración: {config_path}")
 
-    raw: Any = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    try:
+        raw: Any = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as error:
+        # Como ConfigError, Airflow no lo reintenta: es un error de configuración (ADR 0041).
+        raise ConfigError(f"{config_path}: YAML mal formado: {error}") from error
     if not isinstance(raw, dict):
         raise ConfigError(f"{config_path}: se esperaba un mapeo YAML en la raíz")
 
