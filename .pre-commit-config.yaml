@@ -16,8 +16,8 @@ repos:
         types_or: [python, pyi, jupyter]
 
       - id: mypy
-        name: mypy (src + tests + hooks de Claude Code)
-        entry: uv run mypy src tests .claude/hooks
+        name: mypy (src + dags + tests + hooks de Claude Code)
+        entry: uv run mypy src dags tests .claude/hooks
         language: system
         types: [python]
         pass_filenames: false

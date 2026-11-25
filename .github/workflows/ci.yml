@@ -34,7 +34,7 @@ jobs:
         run: uv run sqlfmt --check dbt
 
       - name: Type-check (mypy)
-        run: uv run mypy src tests .claude/hooks
+        run: uv run mypy src dags tests .claude/hooks
 
       - name: Paquetes de dbt (dbt deps)
         run: uv run gold-dbt deps
