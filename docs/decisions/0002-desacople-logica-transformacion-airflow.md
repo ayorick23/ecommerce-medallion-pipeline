@@ -2,7 +2,9 @@
 
 **Estado:** Aceptada — parcialmente superada por
 [0007](0007-polars-bronze-silver-dbt-gold.md) en la capa Gold (dbt en lugar
-de funciones Python; el desacople de Airflow se mantiene)
+de funciones Python; el desacople de Airflow se mantiene) y por
+[0041](0041-airflow-venv-aislado-contrato-codigos-salida.md) (el DAG lanza
+un proceso en un venv aparte en vez de importar las funciones)
 **Fecha:** 2026-08-18
 
 ## Contexto
