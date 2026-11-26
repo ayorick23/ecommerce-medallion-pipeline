@@ -18,6 +18,8 @@ data/gold/*
 !data/bronze/.gitkeep
 !data/silver/.gitkeep
 !data/gold/.gitkeep
+# Raíz aparte para el replay completo con Airflow (Fase 5), comparable con data/
+data-airflow/
 
 # DuckDB
 *.duckdb

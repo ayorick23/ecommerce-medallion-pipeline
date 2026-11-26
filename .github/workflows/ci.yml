@@ -42,19 +42,33 @@ jobs:
       - name: Tests (pytest)
         run: uv run pytest
 
-  # El DAG en Airflow real: Airflow no está en el venv de uv (ADR 0041), así
-  # que esto corre dentro de la imagen del compose.
+  # El DAG en Airflow real: Airflow no está en el venv de uv (ADR 0041). pytest
+  # (tests/airflow/) maneja contenedores de la imagen del compose y verifica el
+  # resultado desde el host; la referencia "a mano" corre dbt en el host.
   airflow:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install
+
+      - name: Install dependencies
+        run: uv sync --all-groups
+
+      - name: Paquetes de dbt (dbt deps)
+        run: uv run gold-dbt deps
+
       - name: Construir la imagen (Dockerfile)
         run: docker compose build
 
-      - name: DAG, aislamiento y alertas en Airflow real
-        run: >-
-          docker run --rm -e CONNECTION_CHECK_MAX_COUNT=0
-          -v "$PWD/dags:/opt/airflow/dags"
-          -v "$PWD/tests/airflow:/checks"
-          medallion-airflow:local python /checks/check_dag.py
+      - name: Escenarios en Airflow real (criterio de la Fase 5)
+        env:
+          MEDALLION_AIRFLOW_IMAGE: medallion-airflow:local
+        run: uv run pytest tests/airflow -v --durations=0
