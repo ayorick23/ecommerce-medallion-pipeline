@@ -28,3 +28,20 @@ silver:
   # considerarse huérfana y frenar el pipeline (ADR 0020). El máximo
   # observado en Olist es 111.
   early_arriving_grace_days: 120
+
+# Orquestación con Airflow (ADR 0040–0042). La lee el DAG con su propio
+# lector (dags/medallion_dag/config.py): el DAG no importa `medallion`.
+orchestration:
+  # Calendario del catchup: una corrida por día, D = logical_date. Deben
+  # coincidir con el rango de la fuente (lo verifica un test).
+  start_date: 2016-09-04
+  end_date: 2018-10-17
+  # Reintentos de los fallos no deterministas (código de salida distinto de
+  # 0 y 3, ADR 0041). Un fail-fast nunca se reintenta.
+  retries: 2
+  retry_delay_minutes: 5
+  alerts:
+    # Correo al fallar una task definitivamente (ADR 0042). Se activa por
+    # despliegue con PIPELINE_ALERTS_ENABLED=true; el destino y el SMTP son
+    # secretos en .env (ver .env.example).
+    enabled: false

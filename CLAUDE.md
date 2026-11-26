@@ -23,7 +23,7 @@ uv run silver-build --dia AAAA-MM-DD       # Silver a la fecha D
 uv run gold-build --dia AAAA-MM-DD         # Gold a la fecha D (dbt build + publicación atómica)
 uv run gold-dbt <args>                     # dbt con las rutas del pipeline, para desarrollo
 uv run pytest                              # suite completa (~7 min: los tests de Gold corren dbt)
-uv run ruff check . && uv run ruff format --check . && uv run mypy src tests .claude/hooks
+uv run ruff check . && uv run ruff format --check . && uv run mypy src dags tests .claude/hooks
 uv run sqlfmt --check dbt                  # formato del SQL de dbt
 ```
 

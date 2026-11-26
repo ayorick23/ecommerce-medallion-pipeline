@@ -50,6 +50,9 @@ gold = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# dags/ no es un paquete instalado: Airflow lo agrega a sys.path, y pytest
+# también, para probar sus módulos puros (dags/medallion_dag/config.py).
+pythonpath = ["dags"]
 # Pandera 0.32 usa internamente un `pl.concat` que Polars 1.42 marcó como
 # obsoleto; el aviso no depende de nuestro código. Revisar al actualizar Pandera.
 filterwarnings = ["ignore:the default behavior of `how='horizontal'`:DeprecationWarning:pandera"]
@@ -60,6 +63,10 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.isort]
+# dags/ no está instalado: sin esto, isort trataría medallion_dag como externo.
+known-first-party = ["medallion", "medallion_dag"]
 
 # Formateador del SQL de dbt (ADR 0036), con el mismo largo de línea que ruff.
 # No renderiza Jinja: no necesita las variables de entorno de la ADR 0027.
@@ -73,6 +80,6 @@ strict = true
 # mypy analiza el código fuente de src/medallion/ directamente (no la copia
 # instalada). Sin esto no resuelve los imports entre módulos y, por
 # ignore_missing_imports, los trata en silencio como Any.
-mypy_path = "src"
+mypy_path = "src:dags"
 explicit_package_bases = true
 ignore_missing_imports = true

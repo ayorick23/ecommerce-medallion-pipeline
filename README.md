@@ -244,7 +244,7 @@ uv run pytest                 # suite completa (unit + integration)
 uv run ruff check .           # lint
 uv run ruff format --check .  # formato
 uv run sqlfmt --check dbt     # formato del SQL de dbt
-uv run mypy src tests .claude/hooks  # type-check (strict)
+uv run mypy src dags tests .claude/hooks  # type-check (strict)
 
 uv run pre-commit install     # una vez por clon: corre ruff y mypy antes de cada commit
 ```
